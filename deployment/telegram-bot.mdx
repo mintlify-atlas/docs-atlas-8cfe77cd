@@ -1,0 +1,531 @@
+---
+title: Telegram Bot Setup
+description: Create and configure a Telegram bot with WebApp support for Zona Jackpot 777
+---
+
+## Overview
+
+Zona Jackpot 777 uses Telegram's WebApp feature to provide a rich casino experience inside Telegram. This guide walks you through creating a bot with BotFather and configuring it to launch your casino.
+
+## Creating Your Bot
+
+<Steps>
+  <Step title="Open BotFather">
+    Start a chat with [@BotFather](https://t.me/BotFather) on Telegram.
+    
+    BotFather is the official bot for creating and managing Telegram bots.
+  </Step>
+
+  <Step title="Create New Bot">
+    Send the `/newbot` command to BotFather.
+    
+    ```
+    You: /newbot
+    BotFather: Alright, a new bot. How are we going to call it?
+    Please choose a name for your bot.
+    ```
+  </Step>
+
+  <Step title="Choose Bot Name">
+    Enter a display name for your bot (can contain spaces):
+    
+    ```
+    You: Zona Jackpot 777
+    BotFather: Good. Now let's choose a username for your bot.
+    It must end in `bot`. Like this, for example: TetrisBot or tetris_bot.
+    ```
+  </Step>
+
+  <Step title="Choose Username">
+    Enter a unique username ending in "bot":
+    
+    ```
+    You: zonajackpot777_bot
+    BotFather: Done! Congratulations on your new bot.
+    You will find it at t.me/zonajackpot777_bot
+    
+    Use this token to access the HTTP API:
+    8511146591:AAGZP46Bs0NaqzQvXeduDdwzvA3Tyd02JsU
+    ```
+    
+    <Warning>
+      Save this token securely! It gives full access to your bot. Never share it publicly or commit it to version control.
+    </Warning>
+  </Step>
+</Steps>
+
+## Configuring the Bot Token
+
+### Save Token to Configuration
+
+Add your bot token to `config.py`:
+
+```python config.py
+BOT_TOKEN = "8511146591:AAGZP46Bs0NaqzQvXeduDdwzvA3Tyd02JsU"
+WEBAPP_URL = "https://your-app-name.herokuapp.com"
+```
+
+<Warning>
+  For production, use environment variables instead of hardcoding:
+  
+  ```python
+  import os
+  BOT_TOKEN = os.environ['BOT_TOKEN']
+  ```
+</Warning>
+
+### How the Bot Uses the Token
+
+The token is used to authenticate with Telegram's Bot API:
+
+```python main.py
+import config
+from telegram.ext import Application
+
+def main():
+    app = Application.builder().token(config.BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.run_polling()
+```
+
+## Configuring Bot Commands
+
+### Set Command List
+
+Tell BotFather about your bot's commands:
+
+<Steps>
+  <Step title="Open BotFather">
+    Send `/mybots` to [@BotFather](https://t.me/BotFather)
+  </Step>
+
+  <Step title="Select Your Bot">
+    Click on your bot name (e.g., "Zona Jackpot 777")
+  </Step>
+
+  <Step title="Edit Commands">
+    Click "Edit Commands" and paste:
+    
+    ```
+    start - Launch Zona Jackpot 777 Casino
+    ```
+  </Step>
+</Steps>
+
+Now users can see available commands when they type `/` in the chat.
+
+### Implementing Commands
+
+The `/start` command is implemented in `main.py`:
+
+```python main.py
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton(
+            "🎰 Abrir Zona Jackpot 777", 
+            web_app=WebAppInfo(url=config.WEBAPP_URL)
+        )]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "Bienvenido al Zona Jackpot 777 🎰", 
+        reply_markup=reply_markup
+    )
+```
+
+**What this does:**
+1. User sends `/start` to your bot
+2. Bot replies with a message and a button
+3. Button opens your WebApp at `WEBAPP_URL`
+4. User plays the casino inside Telegram
+
+## WebApp Configuration
+
+### Setting the WebApp URL
+
+The WebApp URL must:
+- Use **HTTPS** (required by Telegram)
+- Be publicly accessible
+- Match your deployed application URL
+
+```python config.py
+WEBAPP_URL = "https://zona-jackpot-777.herokuapp.com"  # Production
+# WEBAPP_URL = "https://abc123.ngrok.io"  # Local testing with ngrok
+```
+
+<Note>
+  For local development, use [ngrok](https://ngrok.com) to create an HTTPS tunnel:
+  
+  ```bash
+  ngrok http 10000
+  ```
+  
+  Then use the `https://` URL provided by ngrok.
+</Note>
+
+### WebApp Button Behavior
+
+When a user clicks the "🎰 Abrir Zona Jackpot 777" button:
+
+1. Telegram opens a WebView/browser inside the app
+2. Loads your Flask application from `WEBAPP_URL`
+3. JavaScript can access Telegram user data via `window.Telegram.WebApp`
+4. User interacts with your casino
+5. All data persists via your backend API
+
+### Customizing the Button
+
+Edit the button text and emoji in `main.py:7`:
+
+```python
+InlineKeyboardButton(
+    "🎰 Abrir Zona Jackpot 777",  # Button text
+    web_app=WebAppInfo(url=config.WEBAPP_URL)
+)
+```
+
+You can also add multiple buttons:
+
+```python
+keyboard = [
+    [InlineKeyboardButton("🎰 Play Casino", web_app=WebAppInfo(url=config.WEBAPP_URL))],
+    [InlineKeyboardButton("📊 Leaderboard", web_app=WebAppInfo(url=f"{config.WEBAPP_URL}/admin"))],
+    [InlineKeyboardButton("ℹ️ Help", callback_data="help")]
+]
+```
+
+## Running the Bot
+
+### Polling Mode (Development)
+
+Run the bot locally for testing:
+
+```bash
+python main.py
+```
+
+The bot will continuously poll Telegram for new messages:
+
+```python main.py:15
+app.run_polling()
+```
+
+**Pros:**
+- Easy to set up
+- No webhook configuration needed
+- Works behind firewalls
+
+**Cons:**
+- Higher latency
+- Must keep process running
+- Not ideal for production
+
+### Webhook Mode (Production)
+
+For production, use webhooks instead of polling:
+
+```python main.py
+import config
+from telegram.ext import Application
+
+def main():
+    app = Application.builder().token(config.BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    
+    # Webhook mode
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=8443,
+        url_path=config.BOT_TOKEN,
+        webhook_url=f"https://yourdomain.com/{config.BOT_TOKEN}"
+    )
+```
+
+**Pros:**
+- Lower latency (instant updates)
+- More efficient for production
+- Scales better
+
+**Cons:**
+- Requires HTTPS public URL
+- More complex setup
+
+<Note>
+  For Heroku/Render, you may need to run the bot as a separate worker process or use webhook mode integrated with your Flask app.
+</Note>
+
+## Bot Token Security
+
+### Protecting Your Token
+
+<Warning>
+  If your bot token is compromised, attackers can:
+  - Send messages as your bot
+  - Access user data
+  - Modify bot configuration
+  - Delete your bot
+</Warning>
+
+**Security best practices:**
+
+<Steps>
+  <Step title="Use Environment Variables">
+    Never hardcode tokens in source code:
+    
+    ```python
+    import os
+    BOT_TOKEN = os.environ['BOT_TOKEN']  # Read from environment
+    ```
+  </Step>
+
+  <Step title="Add to .gitignore">
+    Prevent accidental commits:
+    
+    ```txt .gitignore
+    config.py
+    .env
+    *.pyc
+    __pycache__/
+    ```
+  </Step>
+
+  <Step title="Rotate Compromised Tokens">
+    If your token is exposed:
+    
+    1. Send `/revoke` to [@BotFather](https://t.me/BotFather)
+    2. Select your bot
+    3. Get new token
+    4. Update your deployment
+  </Step>
+
+  <Step title="Restrict Access">
+    Only share tokens with:
+    - Deployment platform environment variables
+    - Trusted team members
+    - Secure secret management systems (e.g., HashiCorp Vault)
+  </Step>
+</Steps>
+
+### Checking for Leaks
+
+Before deploying, verify no tokens are in git history:
+
+```bash
+git log -p | grep -i "BOT_TOKEN"
+```
+
+If found, rotate the token immediately and clean git history:
+
+```bash
+git filter-branch --force --index-filter \
+  "git rm --cached --ignore-unmatch config.py" \
+  --prune-empty --tag-name-filter cat -- --all
+```
+
+## Testing Your Bot
+
+<Steps>
+  <Step title="Start Bot Process">
+    ```bash
+    python main.py
+    ```
+    
+    You should see:
+    ```
+    # Bot starts polling for updates
+    ```
+  </Step>
+
+  <Step title="Open Telegram">
+    Search for your bot by username (e.g., `@zonajackpot777_bot`)
+  </Step>
+
+  <Step title="Send /start">
+    Send the `/start` command to your bot
+  </Step>
+
+  <Step title="Click WebApp Button">
+    Click the "🎰 Abrir Zona Jackpot 777" button
+    
+    <Note>
+      If the button doesn't work:
+      - Ensure `WEBAPP_URL` uses HTTPS
+      - Check that your Flask app is running and accessible
+      - Verify no CORS issues in browser console
+    </Note>
+  </Step>
+
+  <Step title="Test Casino">
+    The WebApp should:
+    - Load your casino interface
+    - Automatically register your Telegram user
+    - Display your starting bits (default: 500)
+    - Allow you to play games
+  </Step>
+</Steps>
+
+## User Registration Flow
+
+When a user first opens your WebApp:
+
+1. Telegram passes user data via `window.Telegram.WebApp`:
+   ```javascript
+   const user = window.Telegram.WebApp.initDataUnsafe.user;
+   ```
+
+2. Your frontend sends registration request:
+   ```javascript
+   fetch('/register', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({
+       telegram_id: user.id,
+       nombre: `${user.first_name} ${user.last_name || ''}`,
+       username: user.username,
+       photo_url: user.photo_url
+     })
+   });
+   ```
+
+3. Backend registers user in database:
+   ```python app.py:57-77
+   @app.route('/register', methods=["POST"])
+   def register():
+       data = request.get_json()
+       telegram_id = str(data.get("telegram_id"))
+       nombre = data.get("nombre")
+       username = data.get("username", "")
+       photo_url = data.get("photo_url", "")
+       
+       database.agregar_usuario(telegram_id, nombre, username, photo_url)
+       session["telegram_id"] = telegram_id
+       session["nombre"] = nombre
+       
+       return jsonify({"status": "ok"})
+   ```
+
+## Advanced Configuration
+
+### Bot Description
+
+Set a description shown in bot profile:
+
+1. Send `/mybots` to [@BotFather](https://t.me/BotFather)
+2. Select your bot
+3. Click "Edit Description"
+4. Enter:
+   ```
+   🎰 Zona Jackpot 777 - Premium online casino
+   
+   Play slot machines, French roulette, and multiplayer Moche!
+   Earn bits, compete on leaderboards, and win big!
+   ```
+
+### Bot About Text
+
+Set a short about text (shown in search):
+
+1. Send `/mybots` to [@BotFather](https://t.me/BotFather)
+2. Select your bot
+3. Click "Edit About"
+4. Enter:
+   ```
+   🎰 Play casino games inside Telegram! Slots, roulette, and more.
+   ```
+
+### Bot Profile Picture
+
+1. Send `/mybots` to [@BotFather](https://t.me/BotFather)
+2. Select your bot
+3. Click "Edit Botpic"
+4. Upload a 512x512 PNG image
+
+## Troubleshooting
+
+### Bot Not Responding
+
+**Check:**
+- Is `python main.py` running?
+- Is the bot token correct?
+- Any errors in console?
+
+```bash
+python main.py
+# Should show no errors and start polling
+```
+
+### WebApp Button Not Working
+
+**Common issues:**
+
+1. **HTTP instead of HTTPS**
+   - Telegram requires HTTPS for WebApps
+   - Use ngrok for local testing
+
+2. **Wrong URL**
+   - Verify `WEBAPP_URL` matches your deployed app
+   - Test URL in browser first
+
+3. **CORS Errors**
+   - Check browser console for errors
+   - Flask-SocketIO is configured with `cors_allowed_origins='*'`
+
+### User Not Registered
+
+**Check:**
+- Is the `/register` endpoint being called?
+- Check browser network tab for errors
+- Verify `telegram_id` is being sent correctly
+
+## Production Deployment
+
+### Deploying with Flask App
+
+Update your `Procfile` to run both processes:
+
+```txt Procfile
+web: gunicorn -k eventlet -w 1 app:app
+bot: python main.py
+```
+
+<Note>
+  Heroku free tier only allows one web dyno. You may need to:
+  - Use webhook mode instead of polling
+  - Deploy bot separately
+  - Upgrade to paid tier for multiple processes
+</Note>
+
+### Webhook Integration
+
+Alternatively, integrate webhooks into your Flask app:
+
+```python app.py
+from telegram import Update
+from telegram.ext import Application
+
+# Initialize bot
+bot_app = Application.builder().token(config.BOT_TOKEN).build()
+
+@app.route(f'/telegram/{config.BOT_TOKEN}', methods=['POST'])
+async def telegram_webhook():
+    update = Update.de_json(request.get_json(), bot_app.bot)
+    await bot_app.process_update(update)
+    return 'OK'
+```
+
+Then set webhook:
+```bash
+curl -X POST https://api.telegram.org/bot<TOKEN>/setWebhook \
+  -d url=https://yourdomain.com/telegram/<TOKEN>
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/deployment/configuration">
+    Configure environment variables
+  </Card>
+  <Card title="Production Deployment" icon="rocket" href="/deployment/production">
+    Deploy to production servers
+  </Card>
+</CardGroup>

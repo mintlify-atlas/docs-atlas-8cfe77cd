@@ -1,0 +1,101 @@
+---
+title: 'Place Bet'
+description: 'Deduct bits from user balance when placing a bet'
+---
+
+## POST /bet
+
+This endpoint deducts a specified amount of bits from the user's balance when they place a bet in the game. The user must be authenticated via session.
+
+### Request Body
+
+<ParamField body="cantidad" type="integer" required>
+  The amount of bits to bet. Must be greater than 0.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  Status of the operation: `"ok"` for success, `"error"` for failure
+</ResponseField>
+
+<ResponseField name="bits" type="integer">
+  The user's current bit balance after the bet (or current balance if bet failed)
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Error message (only present when status is `"error"`)
+</ResponseField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.zonajackpot777.com/bet \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=your-session-cookie" \
+  -d '{
+    "cantidad": 100
+  }'
+```
+
+```javascript JavaScript
+fetch('https://api.zonajackpot777.com/bet', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  credentials: 'include',
+  body: JSON.stringify({
+    cantidad: 100
+  })
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Response Examples
+
+<ResponseExample>
+
+```json Success
+{
+  "status": "ok",
+  "bits": 900
+}
+```
+
+```json Insufficient Funds
+{
+  "status": "error",
+  "message": "Fondos insuficientes",
+  "bits": 50
+}
+```
+
+```json Invalid Amount
+{
+  "status": "error",
+  "message": "Cantidad inválida"
+}
+```
+
+```json Unauthorized
+{
+  "status": "error",
+  "message": "Usuario no autenticado"
+}
+```
+
+</ResponseExample>
+
+### Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| 200 | Bet placed successfully |
+| 400 | Invalid amount or insufficient funds |
+| 401 | User not authenticated |

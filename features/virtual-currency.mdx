@@ -1,0 +1,398 @@
+---
+title: 'Virtual Currency System'
+description: 'Complete Bits economy with betting, winnings, admin recharges, and transaction tracking'
+---
+
+## Overview
+
+The **Bits** system is the virtual currency powering all gameplay in Zona Jackpot 777. Users bet Bits on games, earn winnings, and can receive admin-issued recharges.
+
+## Database Schema
+
+The currency system is stored in the `usuarios` table with the following fields:
+
+```sql
+CREATE TABLE usuarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id TEXT NOT NULL UNIQUE,
+    nombre TEXT NOT NULL,
+    bits INTEGER NOT NULL DEFAULT 0 CHECK (bits >= 0),
+    total_recargas INTEGER DEFAULT 0,
+    total_ganados INTEGER DEFAULT 0,
+    username TEXT,
+    photo_url TEXT
+)
+```
+
+**Key Columns:**
+- `bits` - Current balance (with CHECK constraint preventing negatives)
+- `total_recargas` - Lifetime admin recharges
+- `total_ganados` - Lifetime winnings from games
+
+<Note>
+The `CHECK (bits >= 0)` constraint ensures users cannot have negative balances.
+</Note>
+
+## Core Operations
+
+### Getting Balance
+
+Retrieve a user's current Bits (`database.py:78-93`):
+
+```python
+def obtener_bits(telegram_id: str) -> int:
+    if not telegram_id:
+        raise ValueError("telegram_id es obligatorio")
+
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT bits
+            FROM usuarios
+            WHERE telegram_id = ?
+        """, (telegram_id,)).fetchone()
+
+        return row["bits"] if row else 0
+```
+
+**Usage in routes** (`app.py:31`):
+
+```python
+bits = database.obtener_bits(telegram_id)
+return render_template("index.html", bits=bits, ...)
+```
+
+### Deducting Bits (Betting)
+
+The `/bet` endpoint deducts Bits before gameplay begins (`app.py:246-279`):
+
+```python
+@app.route('/bet', methods=["POST"])
+def bet():
+    if "telegram_id" not in session:
+        return jsonify({
+            "status": "error",
+            "message": "Usuario no autenticado"
+        }), 401
+
+    data = request.get_json()
+    cantidad = int(data.get("cantidad", 0))
+
+    if cantidad <= 0:
+        return jsonify({
+            "status": "error",
+            "message": "Cantidad inválida"
+        }), 400
+
+    telegram_id = session["telegram_id"]
+
+    success = database.descontar_bits(telegram_id, cantidad)
+    bits_actuales = database.obtener_bits(telegram_id)
+
+    if success:
+        return jsonify({
+            "status": "ok",
+            "bits": bits_actuales
+        })
+    else:
+        return jsonify({
+            "status": "error",
+            "message": "Fondos insuficientes",
+            "bits": bits_actuales
+        }), 400
+```
+
+**Database implementation** (`database.py:179-198`):
+
+```python
+def descontar_bits(telegram_id: str, cantidad: int) -> bool:
+    if not telegram_id:
+        return False
+
+    if cantidad <= 0:
+        return False
+
+    with get_connection() as conn:
+        cursor = conn.execute("""
+            UPDATE usuarios
+            SET bits = bits - ?
+            WHERE telegram_id = ? AND bits >= ?
+        """, (cantidad, telegram_id, cantidad))
+
+        return cursor.rowcount > 0
+```
+
+<Tip>
+The atomic `WHERE bits >= ?` check prevents race conditions and ensures sufficient funds before deduction.
+</Tip>
+
+### Adding Bits (Winnings)
+
+The `/win` endpoint credits winnings to user accounts (`app.py:283-309`):
+
+```python
+@app.route('/win', methods=["POST"])
+def win():
+    if "telegram_id" not in session:
+        return jsonify({
+            "status": "error",
+            "message": "Usuario no autenticado"
+        }), 401
+
+    data = request.get_json()
+    cantidad = int(data.get("cantidad", 0))
+
+    if cantidad <= 0:
+        return jsonify({
+            "status": "error",
+            "message": "Cantidad inválida"
+        }), 400
+
+    telegram_id = session["telegram_id"]
+
+    database.registrar_ganancia(telegram_id, cantidad)
+    bits_actuales = database.obtener_bits(telegram_id)
+
+    return jsonify({
+        "status": "ok",
+        "bits": bits_actuales
+    })
+```
+
+**Database implementation** (`database.py:160-177`):
+
+```python
+def registrar_ganancia(telegram_id: str, cantidad: int) -> bool:
+    if not telegram_id or cantidad <= 0:
+        return False
+
+    with get_connection() as conn:
+        cursor = conn.execute("""
+            UPDATE usuarios
+            SET bits = bits + ?,
+                total_ganados = total_ganados + ?
+            WHERE telegram_id = ?
+        """, (cantidad, cantidad, telegram_id))
+
+        return cursor.rowcount > 0
+```
+
+<Note>
+Winnings update both `bits` (current balance) and `total_ganados` (lifetime stats) in a single transaction.
+</Note>
+
+## Admin Recharge System
+
+### Recharge Endpoint
+
+Administrators can add Bits to any user account via the `/admin` interface (`app.py:313-340`):
+
+```python
+@app.route('/admin', methods=["GET", "POST"])
+def admin():
+    mensaje = ""
+
+    if request.method == "POST":
+        telegram_id = request.form["telegram_id"]
+        cantidad = int(request.form["cantidad"])
+        password = request.form.get("password")
+
+        ADMIN_PASSWORD = "admin"
+
+        if password == ADMIN_PASSWORD:
+            database.recargar_bits(telegram_id, cantidad)
+            mensaje = f"✅ Éxito: Se recargaron {cantidad} Bits al usuario con ID {telegram_id}"
+        else:
+            mensaje = "❌ Error: Contraseña de administrador incorrecta."
+            
+    usuarios = database.obtener_todos_usuarios()
+    top_recargas = database.obtener_top_recargas()
+    top_ganadores = database.obtener_top_ganadores()
+
+    return render_template("admin.html", 
+                         mensaje=mensaje, 
+                         usuarios=usuarios, 
+                         top_recargas=top_recargas, 
+                         top_ganadores=top_ganadores)
+```
+
+<Warning>
+The default admin password is hardcoded. In production, use environment variables and strong authentication.
+</Warning>
+
+### Recharge Database Logic
+
+(`database.py:141-158`):
+
+```python
+def recargar_bits(telegram_id: str, cantidad: int) -> bool:
+    if not telegram_id or cantidad <= 0:
+        return False
+
+    with get_connection() as conn:
+        cursor = conn.execute("""
+            UPDATE usuarios
+            SET bits = bits + ?,
+                total_recargas = total_recargas + ?
+            WHERE telegram_id = ?
+        """, (cantidad, cantidad, telegram_id))
+
+        return cursor.rowcount > 0
+```
+
+**What it does:**
+1. Adds `cantidad` to current `bits` balance
+2. Tracks the recharge in `total_recargas` for leaderboards
+3. Returns `True` if user exists and was updated
+
+## Multiplayer Room Betting
+
+Rooms automatically set bet amounts based on difficulty level (`app.py:114-126`):
+
+```python
+@app.route('/api/rooms', methods=['GET', 'POST'])
+def handle_rooms():
+    if request.method == 'POST':
+        data = request.get_json()
+        difficulty = data.get("difficulty", "easy")
+        
+        bet_amounts = {
+            "easy": 50,
+            "medium": 150,
+            "hard": 350,
+            "pro": 700
+        }
+        bet_amount = bet_amounts.get(difficulty, 50)
+        
+        room_id = manager.create_room(..., bet_amount, ...)
+        return jsonify({"status": "ok", "room_id": room_id})
+```
+
+**Difficulty Tiers:**
+- 🟢 Easy: 50 Bits
+- 🟡 Medium: 150 Bits
+- 🔴 Hard: 350 Bits
+- 🔥 Pro: 700 Bits
+
+## Transaction Tracking
+
+### User List Query
+
+Retrieve all users sorted by balance (`database.py:95-109`):
+
+```python
+def obtener_todos_usuarios() -> list:
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT id, telegram_id, nombre, username, photo_url, 
+                   bits, total_recargas, total_ganados
+            FROM usuarios
+            ORDER BY bits DESC, id ASC
+        """).fetchall()
+        
+        return [dict(row) for row in rows]
+```
+
+### Top Recharges Leaderboard
+
+Top 10 users by lifetime recharges (`database.py:111-124`):
+
+```python
+def obtener_top_recargas() -> list:
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT telegram_id, nombre, username, photo_url, total_recargas
+            FROM usuarios
+            WHERE total_recargas > 0
+            ORDER BY total_recargas DESC
+            LIMIT 10
+        """).fetchall()
+        return [dict(row) for row in rows]
+```
+
+### Top Winners Leaderboard
+
+Top 10 users by lifetime winnings (`database.py:126-139`):
+
+```python
+def obtener_top_ganadores() -> list:
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT telegram_id, nombre, username, photo_url, total_ganados
+            FROM usuarios
+            WHERE total_ganados > 0
+            ORDER BY total_ganados DESC
+            LIMIT 10
+        """).fetchall()
+        return [dict(row) for row in rows]
+```
+
+## Real-Time Balance Updates
+
+The frontend listens for balance changes via custom events (`static/script.js:89-97`):
+
+```javascript
+function initBitsListener() {
+    const bitsDisplay = document.querySelector(".user-info strong");
+
+    document.addEventListener("win-update", (e) => {
+        if (bitsDisplay && e.detail?.bits !== undefined) {
+            bitsDisplay.textContent = e.detail.bits;
+        }
+    });
+}
+```
+
+## Context Manager Pattern
+
+All database operations use a context manager for safe connection handling (`database.py:8-24`):
+
+```python
+@contextmanager
+def get_connection():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+```
+
+<Tip>
+This pattern ensures all transactions are committed on success and rolled back on errors, preventing data corruption.
+</Tip>
+
+## API Response Format
+
+All currency endpoints follow a consistent JSON structure:
+
+**Success:**
+```json
+{
+  "status": "ok",
+  "bits": 1250
+}
+```
+
+**Error:**
+```json
+{
+  "status": "error",
+  "message": "Fondos insuficientes",
+  "bits": 25
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Admin Panel" icon="shield" href="/features/admin-panel">
+    Manage recharges and view leaderboards
+  </Card>
+  <Card title="Multiplayer Rooms" icon="users" href="/features/multiplayer-rooms">
+    Learn how Bits are wagered in multiplayer games
+  </Card>
+</CardGroup>

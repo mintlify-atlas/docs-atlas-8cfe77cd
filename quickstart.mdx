@@ -1,80 +1,514 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get Zona Jackpot 777 running in under 5 minutes
 ---
 
-## Get started in three steps
+## Overview
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This quickstart will take you from zero to a fully functional casino platform running locally with test mode enabled. You'll be able to access all game modes and test the complete user experience without needing Telegram authentication.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  **Time Required**: ~5 minutes
+  
+  **Prerequisites**: 
+  - Python 3.11+ installed
+  - Git installed
+  - Terminal/command line access
 </Note>
+
+## Quick Start Steps
+
+<Steps>
+  <Step title="Clone the Repository">
+    First, get the source code onto your local machine:
+    
+    ```bash
+    git clone <repository-url>
+    cd zona-jackpot-777
+    ```
+    
+    <Tip>
+      If you don't have the repository URL yet, download the source files and extract them to a folder called `zona-jackpot-777`.
+    </Tip>
+  </Step>
+  
+  <Step title="Install Dependencies">
+    Create a virtual environment and install all required Python packages:
+    
+    ```bash
+    # Create virtual environment
+    python -m venv venv
+    
+    # Activate it (Windows)
+    venv\Scripts\activate
+    
+    # Activate it (macOS/Linux)
+    source venv/bin/activate
+    
+    # Install dependencies
+    pip install -r requirements.txt
+    ```
+    
+    This installs Flask, SocketIO, python-telegram-bot, and all other dependencies defined in `requirements.txt`.
+    
+    <Warning>
+      Make sure you're using Python 3.11 or newer. Check with `python --version`.
+    </Warning>
+  </Step>
+  
+  <Step title="Initialize the Database">
+    The database initializes automatically on first run, but you can pre-initialize it:
+    
+    ```bash
+    python -c "import database; database.init_db()"
+    ```
+    
+    This creates `casino.db` with the `usuarios` table structure:
+    
+    ```sql
+    CREATE TABLE usuarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id TEXT NOT NULL UNIQUE,
+        nombre TEXT NOT NULL,
+        bits INTEGER NOT NULL DEFAULT 0 CHECK (bits >= 0),
+        username TEXT,
+        total_recargas INTEGER DEFAULT 0,
+        total_ganados INTEGER DEFAULT 0,
+        photo_url TEXT
+    );
+    ```
+    
+    <Note>
+      The database file `casino.db` will be created in the project root directory.
+    </Note>
+  </Step>
+  
+  <Step title="Run the Application">
+    Start the Flask development server:
+    
+    ```bash
+    python app.py
+    ```
+    
+    You should see output like:
+    
+    ```
+    * Serving Flask app 'app'
+    * Debug mode: off
+    WARNING: This is a development server. Do not use it in a production deployment.
+    * Running on all addresses (0.0.0.0)
+    * Running on http://127.0.0.1:10000
+    * Running on http://192.168.1.x:10000
+    ```
+    
+    The app listens on port `10000` by default (configurable via `PORT` environment variable).
+  </Step>
+  
+  <Step title="Access the Application">
+    Open your browser and navigate to:
+    
+    ```
+    http://localhost:10000
+    ```
+    
+    **You'll automatically be logged in as a test user** with these credentials:
+    
+    - **Telegram ID**: `12345`
+    - **Name**: `Usuario de Prueba`
+    - **Username**: `tester`
+    - **Starting Bits**: `500`
+    
+    This is handled by the test mode in `app.py:34-52`:
+    
+    ```python
+    # TEST MODE: Provide a test user with bits when running locally
+    test_id = "12345"
+    test_nombre = "Usuario de Prueba"
+    
+    # Add test user to database if it doesn't exist
+    database.agregar_usuario(test_id, test_nombre, "tester")
+    
+    # Give them 500 bits if they have less
+    bits = database.obtener_bits(test_id)
+    if bits < 500:
+        database.recargar_bits(test_id, 500)
+        bits = database.obtener_bits(test_id)
+    ```
+  </Step>
+</Steps>
+
+## What You Should See
+
+### Home Screen
+
+The landing page displays:
+
+<CardGroup cols={2}>
+  <Card title="User Profile Section">
+    - Your name: "Usuario de Prueba"
+    - Username: "@tester"
+    - Current Bits balance: 500
+    - Profile photo placeholder (if no Telegram photo)
+  </Card>
+  
+  <Card title="Game Mode Cards">
+    Three clickable game cards:
+    - **Slot Machine** - 3-reel slots
+    - **Moche** - Multiplayer card game
+    - **Ruleta Francesa** - French roulette
+  </Card>
+</CardGroup>
+
+### Testing Each Game Mode
+
+<Accordion title="Slot Machine">
+  Click on the Slot Machine card to access `http://localhost:10000/slotmachine`
+  
+  **What to try:**
+  1. Select your bet amount (10, 25, 50, or 100 Bits)
+  2. Click "SPIN" to start the reels
+  3. Watch for matching symbols:
+     - **3 matching symbols**: 10x multiplier
+     - **2 matching symbols**: 2x multiplier
+     - **Cherry match**: 5x multiplier
+  4. Your Bits balance updates automatically via `/bet` and `/win` API calls
+  
+  **Technical flow:**
+  ```javascript
+  // When you click SPIN
+  POST /bet {cantidad: betAmount}
+  // Deducts Bits from your balance
+  
+  // If you win
+  POST /win {cantidad: winAmount}
+  // Adds winnings to your balance
+  ```
+</Accordion>
+
+<Accordion title="Moche (Multiplayer)">
+  Click on Moche to access `http://localhost:10000/moche`
+  
+  **What to try:**
+  1. Click "Create Room" button
+  2. Configure room settings:
+     - **Difficulty**: Easy (50 Bits) / Medium (150) / Hard (350) / Pro (700)
+     - **Visibility**: Public (anyone can join) or Private (invite only)
+     - **Player Slots**: 2-4 total players
+  3. Click "Ready" to signal you're prepared
+  4. As host, click "Start Game"
+  5. AI bots automatically fill empty slots based on difficulty
+  
+  **Room creation API:**
+  ```python
+  POST /api/rooms
+  {
+    "is_private": false,
+    "difficulty": "easy",
+    "total_slots": 4
+  }
+  # Returns: {"status": "ok", "room_id": "a3f9c2d1"}
+  ```
+  
+  **Socket.IO Events:**
+  - `join_moche_room`: Join an existing room
+  - `toggle_ready`: Mark yourself as ready
+  - `start_moche_game`: Host initiates game start
+  - `room_update`: Broadcast when players join/leave
+  - `game_started`: Signals game has begun
+</Accordion>
+
+<Accordion title="Ruleta Francesa">
+  Click on Ruleta to access `http://localhost:10000/ruleta`
+  
+  **What to try:**
+  1. Place chips on the betting table
+  2. Available bet types:
+     - **Straight up**: Single number (35:1 payout)
+     - **Split**: Two adjacent numbers (17:1)
+     - **Street**: Row of 3 numbers (11:1)
+     - **Corner**: 4 numbers (8:1)
+     - **Red/Black**: Color bets (1:1)
+     - **Even/Odd**: Parity bets (1:1)
+     - **Dozens**: 1-12, 13-24, 25-36 (2:1)
+  3. Click "SPIN" to launch the ball
+  4. Winnings calculated based on where the ball lands
+  
+  **Betting flow:**
+  ```javascript
+  // Total all chip placements
+  totalBet = chips.reduce((sum, chip) => sum + chip.value, 0)
+  
+  // Deduct from balance
+  POST /bet {cantidad: totalBet}
+  
+  // Calculate winnings based on landing number
+  winAmount = calculatePayouts(landingNumber, chipPlacements)
+  
+  // Credit account
+  POST /win {cantidad: winAmount}
+  ```
+</Accordion>
+
+## Testing the Admin Panel
+
+Access the admin interface at `http://localhost:10000/admin`
+
+<Steps>
+  <Step title="View All Users">
+    The main table shows all registered users with:
+    - Telegram ID
+    - Name and username
+    - Current Bits balance
+    - Total recharges (Bits loaded by admin)
+    - Total winnings (Bits won in games)
+    
+    Your test user (`12345 - Usuario de Prueba`) should appear in the list.
+  </Step>
+  
+  <Step title="Add Bits to a User">
+    Fill out the form:
+    
+    ```
+    Telegram ID: 12345
+    Cantidad de Bits: 1000
+    Admin Password: admin
+    ```
+    
+    Click "Recargar Bits" to add 1000 Bits to the test user.
+    
+    <Warning>
+      The default admin password is `admin`. **Change this before production deployment** in `app.py:323`:
+      
+      ```python
+      ADMIN_PASSWORD = "your-secure-password-here"
+      ```
+    </Warning>
+  </Step>
+  
+  <Step title="View Leaderboards">
+    Two leaderboard sections display:
+    
+    **Top Recargas** - Users with highest total Bits recharged:
+    ```python
+    # From database.py:111-123
+    SELECT telegram_id, nombre, username, photo_url, total_recargas
+    FROM usuarios
+    WHERE total_recargas > 0
+    ORDER BY total_recargas DESC
+    LIMIT 10
+    ```
+    
+    **Top Ganadores** - Users with highest total winnings:
+    ```python
+    # From database.py:126-138
+    SELECT telegram_id, nombre, username, photo_url, total_ganados
+    FROM usuarios
+    WHERE total_ganados > 0
+    ORDER BY total_ganados DESC
+    LIMIT 10
+    ```
+  </Step>
+</Steps>
+
+## Testing Multiplayer Locally
+
+To test the real-time multiplayer features:
+
+<Steps>
+  <Step title="Open Multiple Browser Windows">
+    Open two or more browser windows/tabs in **incognito/private mode** to simulate different users:
+    
+    - Window 1: `http://localhost:10000`
+    - Window 2: `http://localhost:10000` (incognito)
+    - Window 3: `http://localhost:10000` (incognito)
+    
+    Each incognito window gets a separate session with the same test user credentials.
+  </Step>
+  
+  <Step title="Create a Public Room">
+    In Window 1:
+    1. Navigate to Moche game
+    2. Click "Create Room"
+    3. Set visibility to **Public**
+    4. Choose difficulty (e.g., Easy)
+    5. Set total slots to 4
+    6. Create the room - note the room ID (e.g., `a3f9c2d1`)
+  </Step>
+  
+  <Step title="Join from Other Windows">
+    In Windows 2 and 3:
+    1. Navigate to Moche game
+    2. Click "Public Rooms" to see available lobbies
+    3. Find the room you created (should show 1/4 players)
+    4. Click "Join Room"
+    
+    All windows should now see each other in the player list via Socket.IO broadcasts.
+  </Step>
+  
+  <Step title="Test Real-Time Sync">
+    Observe the Socket.IO events:
+    
+    - When a player joins: All clients receive `room_update` event
+    - When a player toggles ready: All clients see status change
+    - When host starts game: All clients receive `game_started` event
+    - During gameplay: All moves broadcast via `game_state_sync`
+    
+    Open browser DevTools (F12) → Network → WS to see WebSocket messages in real-time.
+  </Step>
+</Steps>
+
+## Common Issues & Solutions
+
+<AccordionGroup>
+  <Accordion title="Port 10000 already in use">
+    **Error**: `OSError: [Errno 48] Address already in use`
+    
+    **Solution**: Change the port via environment variable:
+    
+    ```bash
+    # macOS/Linux
+    PORT=8080 python app.py
+    
+    # Windows (Command Prompt)
+    set PORT=8080 && python app.py
+    
+    # Windows (PowerShell)
+    $env:PORT=8080; python app.py
+    ```
+    
+    Then access at `http://localhost:8080`
+  </Accordion>
+  
+  <Accordion title="Module not found errors">
+    **Error**: `ModuleNotFoundError: No module named 'flask'`
+    
+    **Solution**: Ensure virtual environment is activated and dependencies installed:
+    
+    ```bash
+    # Verify you're in venv
+    which python  # Should show path to venv/bin/python
+    
+    # Reinstall dependencies
+    pip install -r requirements.txt
+    
+    # Verify Flask is installed
+    pip show flask
+    ```
+  </Accordion>
+  
+  <Accordion title="Database locked errors">
+    **Error**: `sqlite3.OperationalError: database is locked`
+    
+    **Solution**: SQLite doesn't handle high concurrency well. This usually happens if:
+    - Multiple processes are accessing the database
+    - A previous Python process didn't close properly
+    
+    Fix:
+    ```bash
+    # Stop all Python processes
+    pkill python  # macOS/Linux
+    taskkill /F /IM python.exe  # Windows
+    
+    # Delete database and recreate
+    rm casino.db
+    python -c "import database; database.init_db()"
+    
+    # Restart app
+    python app.py
+    ```
+  </Accordion>
+  
+  <Accordion title="Bits not updating after bet">
+    **Error**: Balance shows same amount after spinning slot machine
+    
+    **Solution**: Check browser console (F12) for errors. Common causes:
+    - Session expired (refresh page)
+    - API endpoint returned error (check terminal logs)
+    - JavaScript error preventing API call
+    
+    Manual test:
+    ```bash
+    # In a new terminal, test the /bet endpoint
+    curl -X POST http://localhost:10000/bet \
+      -H "Content-Type: application/json" \
+      -H "Cookie: session=<your-session-cookie>" \
+      -d '{"cantidad": 50}'
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+Now that you have the application running locally:
+
+<CardGroup cols={2}>
+  <Card title="Production Deployment" icon="rocket" href="/installation#production-deployment">
+    Deploy to Render, Heroku, or your own server with Gunicorn
+  </Card>
+  
+  <Card title="Telegram Integration" icon="telegram" href="/installation#telegram-bot-setup">
+    Configure the Telegram bot to launch your Web App
+  </Card>
+  
+  <Card title="Customize Games" icon="palette" href="/deployment/configuration">
+    Adjust payouts, bet limits, and game mechanics
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/register">
+    Explore all endpoints and Socket.IO events
+  </Card>
+</CardGroup>
+
+## Quick Reference
+
+### Essential URLs
+
+```bash
+# Home page
+http://localhost:10000/
+
+# Game modes
+http://localhost:10000/slotmachine
+http://localhost:10000/moche
+http://localhost:10000/ruleta
+
+# Admin panel
+http://localhost:10000/admin
+
+# API endpoints
+POST http://localhost:10000/register
+POST http://localhost:10000/bet
+POST http://localhost:10000/win
+GET  http://localhost:10000/api/rooms
+POST http://localhost:10000/api/rooms
+```
+
+### Test User Credentials
+
+```python
+Telegram ID: "12345"
+Name: "Usuario de Prueba"
+Username: "tester"
+Starting Bits: 500
+Admin Password: "admin"
+```
+
+### Starting/Stopping the Server
+
+```bash
+# Start development server
+python app.py
+
+# Start with custom port
+PORT=8080 python app.py
+
+# Stop server
+Ctrl+C (in terminal)
+
+# Start production server (Gunicorn)
+gunicorn -k eventlet -w 1 app:app --bind 0.0.0.0:10000
+```
+
+<Tip>
+  Keep this quickstart handy as a reference - all the commands and URLs you need for development are here!
+</Tip>

@@ -1,0 +1,139 @@
+---
+title: "Register User"
+description: "Register a new user or update an existing user's information"
+api: "POST /register"
+---
+
+## Overview
+
+The `/register` endpoint creates a new user account or updates an existing user's information if they already exist. After successful registration, the user's session is automatically initialized with their information.
+
+This endpoint uses an upsert pattern - if a user with the given `telegram_id` already exists, their `nombre`, `username`, and `photo_url` will be updated with the new values.
+
+<ParamField body="telegram_id" type="string" required>
+  The unique Telegram user ID. This field is required and must be a valid string representation of the Telegram user's ID.
+</ParamField>
+
+<ParamField body="nombre" type="string" required>
+  The user's display name. This field is required.
+</ParamField>
+
+<ParamField body="username" type="string" optional>
+  The user's Telegram username (without the @ symbol). This field is optional and defaults to an empty string if not provided.
+</ParamField>
+
+<ParamField body="photo_url" type="string" optional>
+  URL to the user's profile photo. This field is optional and defaults to an empty string if not provided.
+</ParamField>
+
+## Response
+
+<ResponseField name="status" type="string" required>
+  The status of the registration request. Returns `"ok"` on success or `"error"` on failure.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Error message describing what went wrong. Only present when status is `"error"`.
+</ResponseField>
+
+## Session Management
+
+Upon successful registration, the following data is stored in the user's session:
+- `telegram_id` - The user's Telegram ID
+- `nombre` - The user's display name
+- `username` - The user's Telegram username
+- `photo_url` - The user's profile photo URL
+
+The session is used to maintain authentication state across subsequent API requests.
+
+## Examples
+
+<RequestExample>
+
+```bash cURL
+curl -X POST https://api.zonajackpot777.com/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "telegram_id": "123456789",
+    "nombre": "John Doe",
+    "username": "johndoe",
+    "photo_url": "https://example.com/photo.jpg"
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.zonajackpot777.com/register', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  credentials: 'include', // Important for session cookies
+  body: JSON.stringify({
+    telegram_id: '123456789',
+    nombre: 'John Doe',
+    username: 'johndoe',
+    photo_url: 'https://example.com/photo.jpg'
+  })
+});
+
+const data = await response.json();
+console.log(data);
+```
+
+```python Python
+import requests
+
+url = 'https://api.zonajackpot777.com/register'
+payload = {
+    'telegram_id': '123456789',
+    'nombre': 'John Doe',
+    'username': 'johndoe',
+    'photo_url': 'https://example.com/photo.jpg'
+}
+
+response = requests.post(url, json=payload)
+print(response.json())
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json Success Response
+{
+  "status": "ok"
+}
+```
+
+```json Error Response - Missing Required Fields
+{
+  "status": "error",
+  "message": "Datos incompletos"
+}
+```
+
+</ResponseExample>
+
+## Error Responses
+
+| Status Code | Description | Response Body |
+|-------------|-------------|---------------|
+| 200 | User successfully registered or updated | `{"status": "ok"}` |
+| 400 | Missing required fields (`telegram_id` or `nombre`) | `{"status": "error", "message": "Datos incompletos"}` |
+
+## Behavior Details
+
+### New User Registration
+When a user with the provided `telegram_id` does not exist in the database:
+- A new user record is created with all provided information
+- The user's initial balance is set to default values
+- Session data is initialized
+
+### Existing User Update
+When a user with the provided `telegram_id` already exists:
+- The user's `nombre`, `username`, and `photo_url` are updated with the new values
+- The user's existing balance and game statistics remain unchanged
+- Session data is refreshed with the updated information
+
+### Required Field Validation
+The endpoint validates that both `telegram_id` and `nombre` are present in the request. If either field is missing or empty, the request will fail with a 400 error.

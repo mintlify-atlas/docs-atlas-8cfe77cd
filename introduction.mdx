@@ -1,0 +1,252 @@
+---
+title: Introduction
+description: Welcome to Zona Jackpot 777 - A Telegram-based casino gaming platform
+---
+
+## What is Zona Jackpot 777?
+
+Zona Jackpot 777 is a fully-featured casino gaming platform built as a Telegram Web App. It combines the convenience of Telegram's messaging platform with real-time multiplayer casino games, creating an engaging social gaming experience accessible directly from your Telegram client.
+
+The platform provides a complete casino ecosystem with virtual currency (Bits), multiple game modes, real-time multiplayer capabilities, and admin tools for managing the gaming economy.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Multiple Casino Games" icon="dice">
+    Three distinct gaming experiences:
+    - **Slot Machine** - Classic 3-reel slots with multiplier payouts
+    - **French Roulette** - Traditional roulette with European wheel layout
+    - **Moche** - Multiplayer card game with real-time synchronization
+  </Card>
+  
+  <Card title="Real-Time Multiplayer" icon="users">
+    Advanced multiplayer system powered by Socket.IO:
+    - Create public or private game rooms
+    - 2-4 player support with AI bot fill-in
+    - Live game state synchronization
+    - Quick chat messages during gameplay
+  </Card>
+  
+  <Card title="Virtual Economy" icon="coins">
+    Complete in-game currency system:
+    - Bits-based wagering and payouts
+    - Transaction tracking (recharges & winnings)
+    - Admin panel for economy management
+    - Leaderboards for top players and winners
+  </Card>
+  
+  <Card title="Telegram Integration" icon="telegram">
+    Seamless Telegram ecosystem integration:
+    - Launch directly from Telegram bot
+    - User authentication via Telegram ID
+    - Profile photos and usernames imported
+    - Test mode for local development
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+Zona Jackpot 777 is built on a modern Python web stack optimized for real-time communication:
+
+<Steps>
+  <Step title="Flask Web Application">
+    The core server runs on Flask 3.1.3, handling HTTP routes, session management, and template rendering. All game logic, user authentication, and API endpoints are managed through Flask.
+    
+    **Key Components:**
+    - Route handlers for each game mode (`/slotmachine`, `/moche`, `/ruleta`)
+    - REST API endpoints (`/bet`, `/win`, `/register`)
+    - Admin interface for economy management
+  </Step>
+  
+  <Step title="Socket.IO Real-Time Layer">
+    Flask-SocketIO 5.3.6 with Eventlet backend provides WebSocket communication for multiplayer games. This enables instant state synchronization across all players in a game room.
+    
+    **Features:**
+    - Room-based multiplayer lobbies
+    - Event-driven game state updates
+    - Player presence tracking
+    - Quick messaging system
+  </Step>
+  
+  <Step title="SQLite Database">
+    Lightweight SQLite database (`casino.db`) stores all persistent data with automatic transaction management and rollback safety.
+    
+    **Schema:**
+    ```sql
+    usuarios (
+      id INTEGER PRIMARY KEY,
+      telegram_id TEXT UNIQUE,
+      nombre TEXT,
+      username TEXT,
+      photo_url TEXT,
+      bits INTEGER DEFAULT 0,
+      total_recargas INTEGER DEFAULT 0,
+      total_ganados INTEGER DEFAULT 0
+    )
+    ```
+  </Step>
+  
+  <Step title="Telegram Bot Bridge">
+    Python-telegram-bot 22.6 creates the entry point, launching the Web App from Telegram chat with a simple `/start` command.
+    
+    **Implementation:**
+    ```python
+    async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        keyboard = [[
+            InlineKeyboardButton(
+                "🎰 Abrir Zona Jackpot 777", 
+                web_app=WebAppInfo(url=config.WEBAPP_URL)
+            )
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "Bienvenido al Zona Jackpot 777 🎰", 
+            reply_markup=reply_markup
+        )
+    ```
+  </Step>
+</Steps>
+
+## Use Cases
+
+### For Players
+
+<AccordionGroup>
+  <Accordion title="Solo Gaming Experience">
+    Launch any game mode from the home screen and play against the house odds. Perfect for:
+    - Quick slot machine spins during breaks
+    - Strategic roulette betting sessions
+    - Practicing before multiplayer matches
+    
+    The test mode provides 500 free Bits to get started immediately.
+  </Accordion>
+  
+  <Accordion title="Multiplayer Competition">
+    Create or join Moche game rooms with customizable settings:
+    - **Difficulty levels**: Easy (50 Bits), Medium (150 Bits), Hard (350 Bits), Pro (700 Bits)
+    - **Room privacy**: Public lobbies or private invite-only rooms
+    - **Player counts**: 2-4 players with AI bots filling empty slots
+    
+    Real-time synchronization ensures everyone sees moves instantly.
+  </Accordion>
+  
+  <Accordion title="Social Leaderboards">
+    Track your performance against other players:
+    - **Top Rechargers**: Players with the most Bits loaded
+    - **Top Winners**: Players with the highest total winnings
+    - **Live Rankings**: Sort all players by current Bit balance
+    
+    Access the admin panel (with proper credentials) to view detailed statistics.
+  </Accordion>
+</AccordionGroup>
+
+### For Operators
+
+<AccordionGroup>
+  <Accordion title="Economy Management">
+    The admin panel (`/admin`) provides complete control over the gaming economy:
+    - Add Bits to any user via their Telegram ID
+    - View all registered users with their balances
+    - Monitor top rechargers and winners
+    - Protected by admin password authentication
+    
+    **Default admin password**: `admin` (change in production via `app.py:323`)
+  </Accordion>
+  
+  <Accordion title="Game Room Orchestration">
+    The multiplayer room manager (`moche_engine.py`) handles:
+    - Automatic room creation with unique 8-character IDs
+    - Player capacity management (2-4 slots)
+    - Host migration when the creator leaves
+    - Automatic cleanup of empty rooms
+    - Bot player generation based on difficulty
+  </Accordion>
+  
+  <Accordion title="Deployment Flexibility">
+    Deploy anywhere Python is supported:
+    - **Local development**: Built-in test mode with sample user
+    - **Production hosting**: Render, Heroku, Railway, or any PaaS
+    - **Custom servers**: Gunicorn + Eventlet for production performance
+    
+    Configured via environment variables with sensible defaults.
+  </Accordion>
+</AccordionGroup>
+
+## Technology Stack
+
+The platform leverages proven technologies for reliability and performance:
+
+| Component | Technology | Version | Purpose |
+|-----------|-----------|---------|----------|
+| **Web Framework** | Flask | 3.1.3 | HTTP routing, templating, session management |
+| **Real-Time Engine** | Flask-SocketIO | 5.3.6 | WebSocket communication for multiplayer |
+| **Async Server** | Eventlet | 0.40.3 | Non-blocking I/O for Socket.IO events |
+| **Production Server** | Gunicorn | 25.1.0 | WSGI HTTP server with worker management |
+| **Bot Framework** | python-telegram-bot | 22.6 | Telegram Bot API integration |
+| **Database** | SQLite | 3.x | Embedded relational database |
+| **HTTP Client** | httpx | 0.28.1 | Async HTTP requests (Telegram API calls) |
+
+<Note>
+  All dependencies are pinned to specific versions in `requirements.txt` to ensure consistent deployments across environments.
+</Note>
+
+## Getting Started
+
+Ready to launch your own casino platform? The quickstart guide will have you running in minutes:
+
+<Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+  Get from zero to running with our step-by-step quickstart - no prior experience needed
+</Card>
+
+For production deployments or advanced configurations, refer to the detailed installation guide:
+
+<Card title="Installation Guide" icon="server" href="/installation">
+  Comprehensive setup instructions for local development and production environments
+</Card>
+
+## Project Structure
+
+Understanding the codebase organization:
+
+```
+zona-jackpot-777/
+├── app.py                 # Main Flask application (347 lines)
+├── main.py                # Telegram bot launcher (18 lines)
+├── database.py            # SQLite operations & schema (198 lines)
+├── moche_engine.py        # Multiplayer game manager (242 lines)
+├── config.py              # Bot token & webapp URL configuration
+├── requirements.txt       # Python dependencies
+├── runtime.txt           # Python version (3.11.9)
+├── Procfile              # Deployment configuration (Gunicorn)
+├── templates/            # Jinja2 HTML templates
+│   ├── index.html        # Home screen
+│   ├── slotmachine.html  # Slot machine game
+│   ├── ruleta.html       # French roulette game
+│   ├── moche.html        # Multiplayer card game
+│   └── admin.html        # Admin control panel
+└── static/               # CSS, JavaScript, images
+```
+
+<Tip>
+  The entire backend is just **~1,000 lines of Python** - designed to be readable and maintainable for developers of all skill levels.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="play" href="/quickstart">
+    Launch your first instance in under 5 minutes
+  </Card>
+  
+  <Card title="Installation" icon="download" href="/installation">
+    Detailed setup for all deployment scenarios
+  </Card>
+  
+  <Card title="Configuration" icon="sliders" href="/deployment/configuration">
+    Customize games, economy, and Telegram integration
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/register">
+    Complete endpoint documentation for developers
+  </Card>
+</CardGroup>

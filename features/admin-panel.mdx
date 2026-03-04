@@ -1,0 +1,535 @@
+---
+title: 'Admin Panel'
+description: 'Comprehensive admin interface for user management, currency recharges, and leaderboard analytics'
+---
+
+## Overview
+
+The Admin Panel provides a secure web interface for managing users, issuing Bits recharges, and viewing platform analytics through leaderboards.
+
+## Access & Authentication
+
+### Route Configuration
+
+The admin panel is accessible at `/admin` (`app.py:313-340`):
+
+```python
+@app.route('/admin', methods=["GET", "POST"])
+def admin():
+    mensaje = ""
+
+    if request.method == "POST":
+        telegram_id = request.form["telegram_id"]
+        cantidad = int(request.form["cantidad"])
+        password = request.form.get("password")
+
+        ADMIN_PASSWORD = "admin"
+
+        if password == ADMIN_PASSWORD:
+            database.recargar_bits(telegram_id, cantidad)
+            mensaje = f"✅ Éxito: Se recargaron {cantidad} Bits al usuario con ID {telegram_id}"
+        else:
+            mensaje = "❌ Error: Contraseña de administrador incorrecta."
+```
+
+<Warning>
+**Security Notice:** The default password is `"admin"`. In production:
+- Use environment variables: `os.getenv('ADMIN_PASSWORD')`
+- Implement proper authentication (OAuth, JWT)
+- Add rate limiting to prevent brute force
+- Use HTTPS for all admin traffic
+</Warning>
+
+### Telegram WebApp Integration
+
+The admin panel initializes Telegram WebApp for expansion (`templates/admin.html:32-41`):
+
+```html
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand(); // Expand WebApp to full screen in Admin Bot
+    }
+  });
+</script>
+```
+
+## User Management
+
+### Registered Users Table
+
+Displays all platform users with quick-select functionality (`templates/admin.html:116-158`):
+
+```html
+<section class="admin-card" aria-labelledby="users-title">
+  <header class="card-header">
+    <h2 id="users-title">Usuarios Registrados</h2>
+    <p class="section-intro">Lista de usuarios activos para copiar su Telegram ID rápidamente.</p>
+  </header>
+
+  <div class="table-responsive">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID Telegram</th>
+          <th>Nombre</th>
+          <th>Usuario</th>
+          <th>Bits Actuales</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usuarios %}
+        <tr>
+          <td>{{ u.telegram_id }}</td>
+          <td>{{ u.nombre }}</td>
+          <td>{% if u.username %}@{{ u.username }}{% else %}N/A{% endif %}</td>
+          <td>{{ u.bits }}</td>
+          <td>
+            <button type="button" class="btn-outline" 
+                    onclick="document.getElementById('telegram_id').value = '{{ u.telegram_id }}'; 
+                             window.scrollTo({top: 0, behavior: 'smooth'})">
+              Seleccionar
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+```
+
+**Features:**
+- Displays all registered users sorted by balance (`database.py:104`)
+- One-click selection to populate recharge form
+- Shows Telegram ID, name, username, and current Bits
+
+### Data Retrieval
+
+(`app.py:331-334`):
+
+```python
+usuarios = database.obtener_todos_usuarios()
+top_recargas = database.obtener_top_recargas()
+top_ganadores = database.obtener_top_ganadores()
+
+return render_template("admin.html", 
+                     mensaje=mensaje, 
+                     usuarios=usuarios, 
+                     top_recargas=top_recargas, 
+                     top_ganadores=top_ganadores)
+```
+
+## Bits Recharge System
+
+### Recharge Form
+
+(`templates/admin.html:58-105`):
+
+```html
+<form method="POST" class="admin-form" novalidate 
+      onsubmit="return window.adminConfirmSubmit ? window.adminConfirmSubmit(event) : true;">
+
+  <!-- TELEGRAM ID -->
+  <div class="form-group">
+    <label for="telegram_id">Telegram ID del usuario</label>
+    <input id="telegram_id" name="telegram_id" type="text" 
+           inputmode="numeric" pattern="\d{5,20}" maxlength="20"
+           required aria-required="true" 
+           placeholder="Ej. 123456789" autocomplete="off">
+    <small id="telegram-help" class="form-help">
+      Identificador numérico único del usuario en Telegram.
+    </small>
+  </div>
+
+  <!-- CANTIDAD -->
+  <div class="form-group">
+    <label for="cantidad">Cantidad de Bits</label>
+    <input id="cantidad" name="cantidad" type="number" 
+           inputmode="numeric" min="10" step="10" required
+           placeholder="Ej. 100">
+    <small id="cantidad-help" class="form-help">
+      Número entero positivo de Bits a asignar.
+    </small>
+  </div>
+
+  <!-- CONTRASEÑA DE ADMIN -->
+  <div class="form-group">
+    <label for="password">Contraseña de Administrador</label>
+    <input id="password" name="password" type="password" 
+           required placeholder="••••••••">
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn-primary">Recargar Bits</button>
+    <button type="button" class="btn-ghost" 
+            onclick="document.querySelector('.admin-form').reset();">
+      Limpiar
+    </button>
+  </div>
+</form>
+```
+
+**Validation Rules:**
+- `telegram_id`: 5-20 digits, numeric only
+- `cantidad`: Minimum 10, step of 10
+- `password`: Required for submission
+
+### Client-Side Validation
+
+(`templates/admin.html:252-293`):
+
+```javascript
+window.adminConfirmSubmit = function (event) {
+    var form = event.target;
+    var telegram = form.telegram_id;
+    var amount = form.cantidad;
+
+    function hideError(id) { 
+        document.getElementById(id).classList.add('visually-hidden'); 
+    }
+    function showError(id, msg) { 
+        var el = document.getElementById(id); 
+        el.textContent = msg; 
+        el.classList.remove('visually-hidden'); 
+    }
+
+    hideError('telegram-error'); 
+    hideError('cantidad-error');
+
+    // Validate Telegram ID format
+    var idValid = /^\d{5,20}$/.test(telegram.value.trim());
+    if (!idValid) {
+        showError('telegram-error', 'Telegram ID inválido. Introduce solo dígitos (5–20).');
+        telegram.focus();
+        event.preventDefault();
+        return false;
+    }
+
+    // Validate amount
+    var qty = Number(amount.value);
+    if (!Number.isInteger(qty) || qty < 1) {
+        showError('cantidad-error', 'Introduce una cantidad válida (entero mayor que 0).');
+        amount.focus();
+        event.preventDefault();
+        return false;
+    }
+
+    // Confirmation dialog
+    var confirmMsg = 'Vas a recargar ' + qty + ' Bits al usuario ' + telegram.value + '. ¿Confirmar?';
+    if (!confirm(confirmMsg)) {
+        event.preventDefault();
+        return false;
+    }
+
+    return true;
+};
+```
+
+### Server-Side Processing
+
+(`app.py:317-329`):
+
+```python
+if request.method == "POST":
+    telegram_id = request.form["telegram_id"]
+    cantidad = int(request.form["cantidad"])
+    password = request.form.get("password")
+
+    ADMIN_PASSWORD = "admin"
+
+    if password == ADMIN_PASSWORD:
+        database.recargar_bits(telegram_id, cantidad)
+        mensaje = f"✅ Éxito: Se recargaron {cantidad} Bits al usuario con ID {telegram_id}"
+    else:
+        mensaje = "❌ Error: Contraseña de administrador incorrecta."
+```
+
+### Feedback Display
+
+(`templates/admin.html:108-112`):
+
+```html
+{% if mensaje %}
+<div class="system-message" role="status" aria-live="polite" aria-atomic="true">
+  <p>{{ mensaje }}</p>
+</div>
+{% endif %}
+```
+
+## Leaderboards
+
+### Top 10 Recharges
+
+Tracks users with the highest lifetime admin recharges (`templates/admin.html:164-196`):
+
+```html
+<section class="admin-card" aria-labelledby="top-recharges-title">
+  <header class="card-header">
+    <h2 id="top-recharges-title">🔥 Top 10 Recargas</h2>
+    <p class="section-intro">Usuarios con mayor inversión total.</p>
+  </header>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Usuario</th>
+        <th style="text-align: right;">Total Recargado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in top_recargas %}
+      <tr>
+        <td>
+          <div style="font-weight: bold;">{{ u.nombre }}</div>
+          <div style="font-size: 0.8rem; color: var(--text-secondary);">
+            ID: {{ u.telegram_id }}
+          </div>
+        </td>
+        <td style="text-align: right; font-weight: bold; color: var(--gold-1);">
+          {{ u.total_recargas }}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="2" style="text-align: center;">Sin datos.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+```
+
+**Query** (`database.py:111-124`):
+
+```python
+def obtener_top_recargas() -> list:
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT telegram_id, nombre, username, photo_url, total_recargas
+            FROM usuarios
+            WHERE total_recargas > 0
+            ORDER BY total_recargas DESC
+            LIMIT 10
+        """).fetchall()
+        return [dict(row) for row in rows]
+```
+
+### Top 10 Winners
+
+Displays users with the most game winnings (`templates/admin.html:198-230`):
+
+```html
+<section class="admin-card" aria-labelledby="top-winners-title">
+  <header class="card-header">
+    <h2 id="top-winners-title">🏆 Top 10 Ganadores</h2>
+    <p class="section-intro">Usuarios con más bits ganados en juegos.</p>
+  </header>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Usuario</th>
+        <th style="text-align: right;">Total Ganado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in top_ganadores %}
+      <tr>
+        <td>
+          <div style="font-weight: bold;">{{ u.nombre }}</div>
+          <div style="font-size: 0.8rem;">ID: {{ u.telegram_id }}</div>
+        </td>
+        <td style="text-align: right; font-weight: bold;">
+          {{ u.total_ganados }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+```
+
+**Query** (`database.py:126-139`):
+
+```python
+def obtener_top_ganadores() -> list:
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT telegram_id, nombre, username, photo_url, total_ganados
+            FROM usuarios
+            WHERE total_ganados > 0
+            ORDER BY total_ganados DESC
+            LIMIT 10
+        """).fetchall()
+        return [dict(row) for row in rows]
+```
+
+<Tip>
+Leaderboards update in real-time with each page refresh, reflecting the latest `total_recargas` and `total_ganados` values.
+</Tip>
+
+## Quick Access Links
+
+(`templates/admin.html:233-241`):
+
+```html
+<aside class="admin-aside" aria-label="Accesos rápidos de administración">
+  <nav>
+    <ul>
+      <li><a href="/admin/logs">Ver registros</a></li>
+      <li><a href="/admin/users">Buscar usuario</a></li>
+    </ul>
+  </nav>
+</aside>
+```
+
+<Note>
+These links are placeholders for future audit log and user search features.
+</Note>
+
+## Accessibility Features
+
+The admin panel implements WCAG 2.1 AA standards:
+
+### ARIA Labels
+
+```html
+<section class="admin-card" aria-labelledby="form-title">
+  <h2 id="form-title">Recargar Bits a Usuarios</h2>
+  <p id="form-intro" class="section-intro">...</p>
+</section>
+
+<form aria-describedby="form-intro" autocomplete="off">
+  ...
+</form>
+```
+
+### Skip Link
+
+```html
+<a class="skip-link" href="#contenido-principal">
+  Saltar al contenido principal
+</a>
+```
+
+### Live Regions
+
+```html
+<div class="system-message" role="status" aria-live="polite" aria-atomic="true">
+  <p>{{ mensaje }}</p>
+</div>
+
+<p id="telegram-error" class="form-error visually-hidden" 
+   role="alert" aria-live="assertive"></p>
+```
+
+### Semantic HTML
+
+```html
+<header class="admin-header" role="banner">
+  ...
+</header>
+
+<main id="contenido-principal" class="admin-main container" role="main">
+  ...
+</main>
+
+<footer class="admin-footer" role="contentinfo">
+  ...
+</footer>
+```
+
+## Responsive Design
+
+The table layout adapts to mobile screens (`templates/admin.html:122`):
+
+```html
+<div class="table-responsive" style="overflow-x: auto; margin-top: 20px;">
+  <table class="admin-table" style="width: 100%;">
+    ...
+  </table>
+</div>
+```
+
+Leaderboards use a flexible grid:
+
+```html
+<div class="admin-grid-leaderboards"
+     style="display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+            gap: 30px;">
+  <!-- Top Recargas -->
+  <!-- Top Ganadores -->
+</div>
+```
+
+## Production Recommendations
+
+<AccordionGroup>
+  <Accordion title="Environment-Based Configuration">
+    ```python
+    import os
+    
+    ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'change_me_in_production')
+    
+    if not ADMIN_PASSWORD or ADMIN_PASSWORD == 'change_me_in_production':
+        raise ValueError("ADMIN_PASSWORD must be set in production")
+    ```
+  </Accordion>
+
+  <Accordion title="Role-Based Access Control">
+    ```python
+    @app.route('/admin')
+    @require_admin_role
+    def admin():
+        # Check if user is in admins table
+        admin_id = session.get('telegram_id')
+        if not is_admin(admin_id):
+            return redirect(url_for('home'))
+        ...
+    ```
+  </Accordion>
+
+  <Accordion title="Audit Logging">
+    ```python
+    if password == ADMIN_PASSWORD:
+        database.recargar_bits(telegram_id, cantidad)
+        
+        # Log the recharge action
+        log_admin_action(
+            admin_id=session.get('telegram_id'),
+            action='recharge',
+            target_user=telegram_id,
+            amount=cantidad,
+            timestamp=datetime.now()
+        )
+    ```
+  </Accordion>
+
+  <Accordion title="Rate Limiting">
+    ```python
+    from flask_limiter import Limiter
+    
+    limiter = Limiter(app, key_func=lambda: session.get('telegram_id'))
+    
+    @app.route('/admin', methods=['POST'])
+    @limiter.limit("5 per minute")
+    def admin():
+        ...
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Virtual Currency" icon="coins" href="/features/virtual-currency">
+    Understand the Bits economy managed through this panel
+  </Card>
+  <Card title="Telegram Integration" icon="telegram" href="/features/telegram-integration">
+    Learn how Telegram IDs authenticate admin actions
+  </Card>
+</CardGroup>

@@ -1,0 +1,293 @@
+---
+title: 'Slot Machine'
+description: 'Experience the premium 5-reel slot machine with advanced physics, real-time animations, and progressive jackpots'
+---
+
+## Game Overview
+
+The **Zona Jackpot 777 Slot Machine** is a luxury 5-reel slot game featuring premium PNG graphics, advanced physics animations, and a progressive betting system. Win up to **100x your bet** on diamond combinations!
+
+<Note>
+The slot machine uses a weighted symbol system with a 30% base win chance across all 5 reels, balanced for fair gameplay.
+</Note>
+
+## Symbol Types & Payouts
+
+Each symbol has a unique weight (rarity) and payout multiplier:
+
+| Symbol | Rarity | Multiplier | Description |
+|--------|--------|------------|-------------|
+| 💎 Diamond | Very Rare (5%) | **100x** | The jackpot symbol |
+| 🔴 Red 7 | Rare (12%) | **50x** | High-value classic |
+| ⬛ Bar | Uncommon (20%) | **25x** | Medium-value |
+| 👑 Crown | Common (25%) | **15x** | Medium-value |
+| 🎲 Chip | Very Common (35%) | **5x** | Low-value |
+| 🔔 Bell | Most Common (40%) | **2x** | Low-value |
+
+<Tip>
+The weighted pool system means diamonds appear only ~5% of the time, making jackpots truly special!
+</Tip>
+
+## How to Play
+
+<Steps>
+  <Step title="Adjust Your Bet">
+    Use the **+/- Apuesta** buttons to set your bet amount, or click **Max** to bet your full balance.
+    
+    ```javascript
+    // Betting controls from slotmachine.js:96-105
+    if (action === 'decrease-bet') {
+      currentVal = Math.max(1, currentVal - 10);
+    } else if (action === 'increase-bet') {
+      currentVal = Math.min(state.userBits, currentVal + 10);
+    } else if (action === 'max-bet') {
+      currentVal = Math.max(1, state.userBits);
+    }
+    ```
+  </Step>
+  
+  <Step title="Spin the Reels">
+    Click the **🎰 Girar** button to place your bet and start spinning. Your bet is deducted immediately via the `/bet` endpoint.
+  </Step>
+  
+  <Step title="Watch the Physics">
+    Each reel spins with realistic physics:
+    - **Staggered stopping**: Reels stop sequentially from left to right
+    - **Blur effects**: Motion blur during high-speed rotation
+    - **Bounce animation**: Reels slightly overshoot then settle
+    
+    The physics engine uses cubic-bezier easing: `cubic-bezier(0.1, 0.7, 0.1, 1)` for smooth deceleration.
+  </Step>
+  
+  <Step title="Collect Your Winnings">
+    If 3+ consecutive symbols match (starting from the left), you win! Coins shower from the dispenser with real physics.
+  </Step>
+</Steps>
+
+## Winning Combinations
+
+### Match Requirements
+
+Wins require **3, 4, or 5 consecutive matching symbols** starting from the **leftmost reel**:
+
+<CodeGroup>
+```javascript Win Detection
+// From slotmachine.js:459-468
+let matchCount = 1;
+let winSymbol = results[0];
+
+for (let i = 1; i < results.length; i++) {
+  if (results[i].id === winSymbol.id) {
+    matchCount++;
+  } else {
+    break; // Must be consecutive!
+  }
+}
+```
+
+```javascript Length Multipliers
+// From slotmachine.js:471-473
+let lengthMultiplier = 1;
+if (matchCount === 4) lengthMultiplier = 3;
+if (matchCount === 5) lengthMultiplier = 10;
+```
+</CodeGroup>
+
+### Payout Calculation
+
+```javascript
+totalWin = bet × symbolMultiplier × lengthMultiplier
+```
+
+**Examples:**
+- **3 Bells** (bet 10): `10 × 2 × 1 = 20 Bits`
+- **4 Crowns** (bet 10): `10 × 15 × 3 = 450 Bits`
+- **5 Diamonds** (bet 10): `10 × 100 × 10 = 10,000 Bits` 💎🎉
+
+## Special Features
+
+### 💎 Mega Jackpot
+
+Landing **5 diamonds** triggers the MEGA JACKPOT:
+- **1000x total multiplier** (100x symbol × 10x length)
+- Machine shake animation
+- 120 coins shower over 5 seconds
+- Special celebration message
+
+```javascript
+// From slotmachine.js:476-501
+const isJackpot = matchCount === 5 && winSymbol.id === 'diamond';
+
+if (isJackpot) {
+  coinCount = 120;
+  coinDurationMs = 5000;
+  showResult('💎 ¡¡MEGA JACKPOT!! 💎', 'win');
+}
+```
+
+### 🪙 Physical Coin Dispenser
+
+Winning triggers a **physics-based particle system** where coins:
+1. Launch from the dispenser outlet with random velocity
+2. Arc upward and spread laterally
+3. Bounce realistically on the tray floor
+4. Settle with friction and rotation
+
+```javascript
+// Coin physics from slotmachine.js:320-326
+this.vx = (Math.random() - 0.5) * 6;  // horizontal spread
+this.vy = -(Math.random() * 8 + 4);   // upward burst
+this.gravity = 0.6;
+this.friction = 0.55;                 // energy lost on bounce
+this.floor = trayRect.height - 22;
+```
+
+<Accordion title="Coin Tier Breakdown">
+  - **3-of-a-kind**: 10 coins over 1.5 seconds
+  - **4-of-a-kind**: 30 coins over 2.5 seconds
+  - **5-of-a-kind**: 70 coins over 4 seconds
+  - **Mega Jackpot**: 120 coins over 5 seconds
+</Accordion>
+
+### 🎰 Progressive Counter
+
+Bits update smoothly with cubic easing:
+
+```javascript
+// From slotmachine.js:186-210
+function countUpBits(startVal, endVal) {
+  const duration = 1500;
+  const easeProgress = 1 - Math.pow(1 - progress, 3);
+  const currentVal = Math.floor(startVal + (endVal - startVal) * easeProgress);
+  bitsDisplays.forEach(el => el.textContent = currentVal);
+}
+```
+
+## User Interface
+
+### Betting Panel
+
+Located below the reels:
+
+<CardGroup cols={2}>
+  <Card title="Decrease Bet" icon="minus">
+    Reduces bet by 10 Bits (minimum 1)
+  </Card>
+  <Card title="Increase Bet" icon="plus">
+    Increases bet by 10 Bits (up to balance)
+  </Card>
+  <Card title="Max Bet" icon="arrow-up">
+    Sets bet to your full balance
+  </Card>
+  <Card title="Spin Button" icon="arrows-rotate">
+    Place bet and start spinning
+  </Card>
+</CardGroup>
+
+### Visual Feedback
+
+- **Winning reels**: Highlighted with `.is-win` class for 2.5 seconds
+- **Result message**: Shows win amount or "Try again"
+- **Dispenser glow**: Pulsing light when bet is placed
+- **Jackpot shake**: Entire machine vibrates on big wins
+
+## Technical Details
+
+### Reel Animation System
+
+Each reel uses the **Web Animations API** for smooth, hardware-accelerated spinning:
+
+```javascript
+// From slotmachine.js:155-165
+const anim = track.animate([
+  { transform: 'translateY(0px)', filter: 'blur(0)', offset: 0 },
+  { transform: `translateY(${targetY * 0.15}px)`, filter: 'blur(15px)', offset: 0.2 },
+  { transform: `translateY(${targetY * 0.85}px)`, filter: 'blur(15px)', offset: 0.8 },
+  { transform: `translateY(${targetY + (symbolHeight * 0.4)}px)`, filter: 'blur(0)', offset: 0.96 },
+  { transform: `translateY(${targetY}px)`, filter: 'blur(0)', offset: 1.0 }
+], {
+  duration: duration,
+  easing: 'cubic-bezier(0.1, 0.7, 0.1, 1)',
+  fill: 'forwards'
+});
+```
+
+**Key features:**
+- Dynamic duration: Later reels spin longer (150ms delay per reel)
+- Motion blur peaks at 20% and 80% of the animation
+- Overshoot effect at 96% for realistic bounce
+
+### Accessibility Features
+
+```html
+<!-- From slotmachine.html:129 -->
+<label for="bet-amount" class="visually-hidden">Apuesta</label>
+<input type="number" id="bet-amount" aria-label="Cantidad a apostar" readonly>
+
+<!-- From slotmachine.html:148 -->
+<div class="result-container" role="status" aria-live="polite" aria-atomic="true">
+  <p class="result-message"></p>
+</div>
+```
+
+- **Reduced motion support**: Instant symbol changes when `prefers-reduced-motion` is detected
+- **ARIA labels**: Screen reader friendly betting controls
+- **Skip links**: Keyboard navigation to main content
+
+## Tips & Strategies
+
+<AccordionGroup>
+  <Accordion title="Manage Your Bankroll">
+    Start with smaller bets (10-20 Bits) to extend your playtime. The 30% win rate means you'll win roughly 1 in 3 spins, but variance can create streaks.
+  </Accordion>
+  
+  <Accordion title="Max Bet on Hot Streaks">
+    If you've won 2-3 times in a row, consider increasing your bet. The RNG is independent, but maximizing wins during lucky periods helps overall profitability.
+  </Accordion>
+  
+  <Accordion title="Chase the Diamond">
+    With only a 5% appearance rate per reel, getting 5 diamonds is extremely rare (~1 in 3,200,000 when losing is forced). Jackpots are designed as special moments!
+  </Accordion>
+  
+  <Accordion title="Sound Matters">
+    Enable sound for the full experience. Each coin bounce and reel stop has audio feedback that builds anticipation.
+  </Accordion>
+</AccordionGroup>
+
+## Game Configuration
+
+From `slotmachine.js:12-35`:
+
+```javascript
+const CONFIG = Object.freeze({
+  spin: {
+    minDuration: 1000,
+    maxDuration: 2000,
+    settleThreshold: 0.08,
+    resultDelay: 350,
+    reelDelay: 150
+  },
+  physics: {
+    maxVelocity: 5.5,
+    acceleration: 0.35,
+    friction: 0.94,
+    snap: 0.40
+  },
+  casinoEdge: 0.70  // 30% player win chance
+});
+```
+
+<Warning>
+The game enforces server-side bet validation. All balance changes go through `/bet` (deduct) and `/win` (credit) endpoints to prevent client-side manipulation.
+</Warning>
+
+## Related Games
+
+<CardGroup cols={2}>
+  <Card title="Ruleta Francesa" icon="circle" href="/games/ruleta-francesa">
+    Classic European roulette with single zero
+  </Card>
+  <Card title="Moche" icon="cards" href="/games/moche">
+    Traditional Nicaraguan card game with multiplayer
+  </Card>
+</CardGroup>

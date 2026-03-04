@@ -1,0 +1,315 @@
+---
+title: "Rooms API"
+description: "Create and manage multiplayer game rooms with difficulty levels and player management"
+---
+
+## Overview
+
+The Rooms API allows you to create and manage multiplayer game rooms for the Moche card game. Each room supports configurable difficulty levels, bet amounts, player slots, and privacy settings.
+
+## Endpoints
+
+### Get Public Rooms
+
+Retrieve a list of all available public rooms that are waiting for players.
+
+<ParamField path="method" type="string" default="GET">
+  GET
+</ParamField>
+
+<ParamField path="endpoint" type="string">
+  /api/rooms
+</ParamField>
+
+#### Response
+
+Returns a list of public rooms that are not full and in "waiting" status.
+
+<ResponseField name="status" type="string">
+  Response status - always "ok" on success
+</ResponseField>
+
+<ResponseField name="rooms" type="array">
+  Array of available public rooms
+  
+  <Expandable title="Room Object">
+    <ResponseField name="id" type="string">
+      Unique room identifier (8-character UUID)
+    </ResponseField>
+    
+    <ResponseField name="host_name" type="string">
+      Display name of the room creator
+    </ResponseField>
+    
+    <ResponseField name="bet_amount" type="integer">
+      Required bet amount based on difficulty level
+    </ResponseField>
+    
+    <ResponseField name="players" type="integer">
+      Current number of real players in the room
+    </ResponseField>
+    
+    <ResponseField name="bots" type="integer">
+      Number of bot players (set when game starts)
+    </ResponseField>
+    
+    <ResponseField name="total_slots" type="integer">
+      Maximum total players (humans + bots)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json
+{
+  "status": "ok",
+  "rooms": [
+    {
+      "id": "a3b5c7d9",
+      "host_name": "PlayerOne",
+      "bet_amount": 150,
+      "players": 2,
+      "bots": 0,
+      "total_slots": 4
+    },
+    {
+      "id": "f8e2d4c1",
+      "host_name": "CardShark",
+      "bet_amount": 350,
+      "players": 1,
+      "bots": 0,
+      "total_slots": 4
+    }
+  ]
+}
+```
+</ResponseExample>
+
+#### Example Request
+
+```javascript
+fetch('/api/rooms', {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+  .then(response => response.json())
+  .then(data => {
+    console.log('Available rooms:', data.rooms);
+  });
+```
+
+---
+
+### Create Room
+
+Create a new multiplayer game room with custom settings.
+
+<ParamField path="method" type="string" default="POST">
+  POST
+</ParamField>
+
+<ParamField path="endpoint" type="string">
+  /api/rooms
+</ParamField>
+
+#### Request Body
+
+<ParamField body="is_private" type="boolean" default="false">
+  Whether the room is private (not listed in public rooms)
+</ParamField>
+
+<ParamField body="difficulty" type="string" default="easy">
+  Difficulty level that determines bet amount and bot behavior
+  
+  **Options:**
+  - `easy` - 50 bits bet, 1-2 bots
+  - `medium` - 150 bits bet, 2-3 bots
+  - `hard` - 350 bits bet, 3 bots
+  - `pro` - 700 bits bet, 3 bots
+</ParamField>
+
+<ParamField body="total_slots" type="integer" default="4">
+  Total number of player slots (including bots). Minimum 2, maximum 4.
+</ParamField>
+
+#### Difficulty Levels & Bet Amounts
+
+The bet amount is automatically determined by the difficulty level:
+
+| Difficulty | Bet Amount | Bot Count |
+|------------|------------|----------|
+| easy       | 50 bits    | 1-2      |
+| medium     | 150 bits   | 2-3      |
+| hard       | 350 bits   | 3        |
+| pro        | 700 bits   | 3        |
+
+<Info>
+  Bot count is randomized within the range when the game starts, based on available slots and ensuring minimum 2 total players.
+</Info>
+
+#### Response
+
+<ResponseField name="status" type="string">
+  Response status - "ok" on success
+</ResponseField>
+
+<ResponseField name="room_id" type="string">
+  Unique identifier for the created room (8-character UUID)
+</ResponseField>
+
+<ResponseExample>
+```json
+{
+  "status": "ok",
+  "room_id": "a3b5c7d9"
+}
+```
+</ResponseExample>
+
+#### Example Request
+
+```javascript
+fetch('/api/rooms', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    is_private: false,
+    difficulty: 'medium',
+    total_slots: 4
+  })
+})
+  .then(response => response.json())
+  .then(data => {
+    console.log('Room created:', data.room_id);
+    // Use the room_id to join via WebSocket
+  });
+```
+
+```python
+import requests
+
+response = requests.post('http://localhost:5000/api/rooms', json={
+    'is_private': False,
+    'difficulty': 'hard',
+    'total_slots': 4
+})
+
+data = response.json()
+room_id = data['room_id']
+print(f'Created room: {room_id}')
+```
+
+---
+
+## Room Lifecycle
+
+<Steps>
+  <Step title="Room Creation">
+    A player creates a room using POST /api/rooms. The creator automatically becomes the host and joins the room.
+  </Step>
+  
+  <Step title="Waiting for Players">
+    Room appears in public listings (if not private). Players can join via WebSocket `join_moche_room` event.
+  </Step>
+  
+  <Step title="Ready Check">
+    Players toggle their ready status. Only the host can start the game when enough players are ready.
+  </Step>
+  
+  <Step title="Game Start">
+    Host initiates game start. Bots are added based on difficulty and available slots. Cards are dealt automatically.
+  </Step>
+  
+  <Step title="Gameplay">
+    Players interact via WebSocket events for game actions. State is synchronized in real-time.
+  </Step>
+  
+  <Step title="Room Cleanup">
+    When all players leave, the room is automatically deleted from the server.
+  </Step>
+</Steps>
+
+---
+
+## Authentication
+
+<Warning>
+  Room creation requires an active session with Telegram authentication. The `telegram_id` and `nombre` (name) are retrieved from the session.
+</Warning>
+
+Users must authenticate via Telegram WebApp before accessing the Rooms API. The session stores:
+- `telegram_id` - Unique Telegram user identifier
+- `nombre` - Display name from Telegram profile
+
+Guest users are assigned the ID "guest" and name "Invitado".
+
+---
+
+## Room Structure
+
+Internal room object structure (returned in WebSocket events):
+
+```json
+{
+  "id": "a3b5c7d9",
+  "host": "123456789",
+  "host_name": "PlayerOne",
+  "is_private": false,
+  "bet_amount": 150,
+  "total_slots": 4,
+  "difficulty": "medium",
+  "bots_count": 2,
+  "status": "waiting",
+  "players": [
+    {
+      "id": "123456789",
+      "name": "PlayerOne",
+      "is_host": true,
+      "ready": false,
+      "connected": true
+    },
+    {
+      "id": "987654321",
+      "name": "PlayerTwo",
+      "is_host": false,
+      "ready": true,
+      "connected": true
+    }
+  ],
+  "state": null
+}
+```
+
+<Note>
+  The `state` field contains the full game state after the game starts. See [WebSocket Events](/api/websocket-events) for game state structure.
+</Note>
+
+---
+
+## Error Handling
+
+The API returns standard HTTP status codes:
+
+- **200** - Success
+- **400** - Invalid request parameters
+- **401** - Authentication required
+- **500** - Server error
+
+Errors during room operations (joining, leaving, etc.) are communicated via WebSocket `room_error` events.
+
+---
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="WebSocket Events" icon="signal" href="/api/websocket-events">
+    Real-time communication for room management and gameplay
+  </Card>
+  <Card title="Moche Game" icon="cards" href="/games/moche">
+    Learn about the Moche card game rules and mechanics
+  </Card>
+</CardGroup>

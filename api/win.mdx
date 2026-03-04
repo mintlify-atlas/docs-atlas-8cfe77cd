@@ -1,0 +1,93 @@
+---
+title: 'Record Win'
+description: 'Add bits to user balance when they win'
+---
+
+## POST /win
+
+This endpoint adds a specified amount of bits to the user's balance when they win in the game. The user must be authenticated via session.
+
+### Request Body
+
+<ParamField body="cantidad" type="integer" required>
+  The amount of bits won. Must be greater than 0.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  Status of the operation: `"ok"` for success, `"error"` for failure
+</ResponseField>
+
+<ResponseField name="bits" type="integer">
+  The user's current bit balance after the win has been credited
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Error message (only present when status is `"error"`)
+</ResponseField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.zonajackpot777.com/win \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=your-session-cookie" \
+  -d '{
+    "cantidad": 250
+  }'
+```
+
+```javascript JavaScript
+fetch('https://api.zonajackpot777.com/win', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  credentials: 'include',
+  body: JSON.stringify({
+    cantidad: 250
+  })
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Response Examples
+
+<ResponseExample>
+
+```json Success
+{
+  "status": "ok",
+  "bits": 1150
+}
+```
+
+```json Invalid Amount
+{
+  "status": "error",
+  "message": "Cantidad inválida"
+}
+```
+
+```json Unauthorized
+{
+  "status": "error",
+  "message": "Usuario no autenticado"
+}
+```
+
+</ResponseExample>
+
+### Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| 200 | Win recorded successfully |
+| 400 | Invalid amount (must be greater than 0) |
+| 401 | User not authenticated |

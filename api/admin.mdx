@@ -1,0 +1,395 @@
+---
+title: "Admin Panel"
+description: "Administrative panel for user management, bit recharges, and leaderboard monitoring"
+---
+
+## Overview
+
+The Admin Panel provides a secure interface for managing users, recharging bits, and monitoring system statistics. It includes user management operations, bit recharge functionality, and leaderboard queries.
+
+<Warning>
+  This endpoint requires administrator authentication. The admin password is currently hardcoded as `"admin"` in production (see security considerations below).
+</Warning>
+
+## Endpoint
+
+<CodeGroup>
+```http GET
+GET /admin
+```
+
+```http POST
+POST /admin
+```
+</CodeGroup>
+
+## Authentication
+
+All POST operations require administrator password verification:
+
+- **Password**: Submitted via form field `password`
+- **Default**: `"admin"` (hardcoded in `app.py:323`)
+- **Validation**: Exact string match
+
+<Note>
+  See [Security Considerations](#security-considerations) for best practices on password management.
+</Note>
+
+## GET Request
+
+Retrieves the admin panel interface with user data and leaderboards.
+
+### Response Data
+
+The admin panel renders with the following data:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `usuarios` | `list` | All registered users ordered by bits (DESC) |
+| `top_recargas` | `list` | Top 10 users by total recharge amount |
+| `top_ganadores` | `list` | Top 10 users by total winnings |
+| `mensaje` | `string` | Status message from previous POST operation |
+
+### Implementation
+
+```python app.py:313-340
+@app.route('/admin', methods=["GET", "POST"])
+def admin():
+    mensaje = ""
+    
+    if request.method == "POST":
+        # ... POST handling ...
+        
+    # Obtain user lists and top 10 leaderboards
+    usuarios = database.obtener_todos_usuarios()
+    top_recargas = database.obtener_top_recargas()
+    top_ganadores = database.obtener_top_ganadores()
+    
+    return render_template("admin.html", 
+                         mensaje=mensaje, 
+                         usuarios=usuarios, 
+                         top_recargas=top_recargas, 
+                         top_ganadores=top_ganadores)
+```
+
+## POST Request
+
+Recharges bits to a specified user account.
+
+### Request Body
+
+<ParamField body="telegram_id" type="string" required>
+  Telegram user ID (5-20 digits)
+</ParamField>
+
+<ParamField body="cantidad" type="integer" required>
+  Amount of bits to recharge (must be positive)
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Administrator password for authentication
+</ParamField>
+
+### Form Validation
+
+Client-side validation (JavaScript):
+- `telegram_id`: Pattern `/^\d{5,20}$/`
+- `cantidad`: Integer, minimum 10, step 10
+- Confirmation dialog before submission
+
+### Response Messages
+
+<ResponseField name="Success">
+  ```
+  ✅ Éxito: Se recargaron {cantidad} Bits al usuario con ID {telegram_id}
+  ```
+</ResponseField>
+
+<ResponseField name="Error">
+  ```
+  ❌ Error: Contraseña de administrador incorrecta.
+  ```
+</ResponseField>
+
+### Example
+
+```html admin.html:66-105
+<form method="POST" class="admin-form">
+  <div class="form-group">
+    <label for="telegram_id">Telegram ID del usuario</label>
+    <input id="telegram_id" name="telegram_id" type="text" 
+           pattern="\d{5,20}" required>
+  </div>
+  
+  <div class="form-group">
+    <label for="cantidad">Cantidad de Bits</label>
+    <input id="cantidad" name="cantidad" type="number" 
+           min="10" step="10" required>
+  </div>
+  
+  <div class="form-group">
+    <label for="password">Contraseña de Administrador</label>
+    <input id="password" name="password" type="password" required>
+  </div>
+  
+  <button type="submit">Recargar Bits</button>
+</form>
+```
+
+## Database Operations
+
+### Recharge Bits
+
+Updates user balance and tracks total recharges.
+
+```python database.py:141-157
+def recargar_bits(telegram_id: str, cantidad: int) -> bool:
+    """
+    Recarga bits a un usuario existente.
+    Retorna True si se realizó la recarga.
+    """
+    if not telegram_id or cantidad <= 0:
+        return False
+    
+    with get_connection() as conn:
+        cursor = conn.execute("""
+            UPDATE usuarios
+            SET bits = bits + ?,
+                total_recargas = total_recargas + ?
+            WHERE telegram_id = ?
+        """, (cantidad, cantidad, telegram_id))
+        
+        return cursor.rowcount > 0
+```
+
+### Get All Users
+
+Retrieves complete user list ordered by bits balance.
+
+```python database.py:95-108
+def obtener_todos_usuarios() -> list:
+    """
+    Obtiene la lista completa de usuarios registrados.
+    Retorna una lista de diccionarios con la información de cada usuario.
+    """
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT id, telegram_id, nombre, username, photo_url, 
+                   bits, total_recargas, total_ganados
+            FROM usuarios
+            ORDER BY bits DESC, id ASC
+        """).fetchall()
+        
+        return [dict(row) for row in rows]
+```
+
+### Top Recharges Leaderboard
+
+Returns top 10 users by total bits recharged.
+
+```python database.py:111-123
+def obtener_top_recargas() -> list:
+    """
+    Obtiene los 10 usuarios que más bits han recargado (vía admin).
+    """
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT telegram_id, nombre, username, photo_url, total_recargas
+            FROM usuarios
+            WHERE total_recargas > 0
+            ORDER BY total_recargas DESC
+            LIMIT 10
+        """).fetchall()
+        return [dict(row) for row in rows]
+```
+
+### Top Winners Leaderboard
+
+Returns top 10 users by total game winnings.
+
+```python database.py:126-138
+def obtener_top_ganadores() -> list:
+    """
+    Obtiene los 10 usuarios que más bits han ganado en juegos.
+    """
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT telegram_id, nombre, username, photo_url, total_ganados
+            FROM usuarios
+            WHERE total_ganados > 0
+            ORDER BY total_ganados DESC
+            LIMIT 10
+        """).fetchall()
+        return [dict(row) for row in rows]
+```
+
+## User Data Structure
+
+Each user object contains:
+
+```typescript
+interface Usuario {
+  id: number;                    // Auto-increment primary key
+  telegram_id: string;           // Unique Telegram identifier
+  nombre: string;                // User's display name
+  username: string | null;       // Telegram username (@handle)
+  photo_url: string | null;      // Profile photo URL
+  bits: number;                  // Current balance (>= 0)
+  total_recargas: number;        // Lifetime admin recharges
+  total_ganados: number;         // Lifetime game winnings
+}
+```
+
+## Admin Panel Features
+
+### User Management Table
+
+Displays all registered users with:
+- Telegram ID (monospace font for readability)
+- Name and username
+- Current bits balance
+- **"Seleccionar" button**: Auto-fills the recharge form
+
+### Leaderboards
+
+**Top 10 Recargas** (Top Recharges)
+- Shows users with highest `total_recargas`
+- Displays user name and total amount recharged
+
+**Top 10 Ganadores** (Top Winners)
+- Shows users with highest `total_ganados`
+- Displays user name and total game winnings
+
+### Telegram WebApp Integration
+
+```javascript admin.html:32-41
+document.addEventListener("DOMContentLoaded", () => {
+  const tg = window.Telegram?.WebApp;
+  if (tg) {
+    tg.ready();
+    tg.expand(); // Expand WebApp to fullscreen in Admin Bot
+  }
+});
+```
+
+## Security Considerations
+
+<Warning>
+  **Critical Security Issues** that must be addressed in production:
+</Warning>
+
+### 1. Hardcoded Password
+
+**Current Implementation** (`app.py:323`):
+```python
+ADMIN_PASSWORD = "admin"
+```
+
+**Recommended Solution**:
+```python
+import os
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+
+if not ADMIN_PASSWORD:
+    raise ValueError("ADMIN_PASSWORD environment variable must be set")
+```
+
+### 2. No Rate Limiting
+
+The endpoint has no protection against brute-force password attacks.
+
+**Recommendation**:
+- Implement rate limiting (e.g., Flask-Limiter)
+- Add account lockout after failed attempts
+- Log all authentication attempts
+
+### 3. No HTTPS Enforcement
+
+**Recommendation**:
+- Enforce HTTPS for all admin operations
+- Use secure cookies for session management
+- Implement CSRF protection
+
+### 4. No Session Management
+
+**Recommendation**:
+- Implement proper session-based authentication
+- Add session timeout
+- Use Flask-Login or similar library
+
+### 5. SQL Injection Protection
+
+**Current Status**: ✅ Protected (uses parameterized queries)
+
+All database operations use parameterized queries:
+```python
+cursor = conn.execute("""
+    UPDATE usuarios
+    SET bits = bits + ?, total_recargas = total_recargas + ?
+    WHERE telegram_id = ?
+""", (cantidad, cantidad, telegram_id))
+```
+
+### 6. Input Validation
+
+**Current Validation**:
+- Client-side: JavaScript pattern matching
+- Server-side: Minimal (password check only)
+
+**Recommendation**:
+- Add server-side validation for all inputs
+- Validate `telegram_id` format
+- Validate `cantidad` ranges
+- Sanitize all user inputs
+
+## Error Handling
+
+### Invalid User
+
+If `telegram_id` doesn't exist in database:
+- `recargar_bits()` returns `False`
+- Operation fails silently
+- No error message shown to admin
+
+**Recommendation**: Add explicit user existence check and error message.
+
+### Invalid Amount
+
+If `cantidad <= 0`:
+- `recargar_bits()` returns `False`
+- No error message shown
+
+**Recommendation**: Add validation and error feedback.
+
+## Quick Links Section
+
+The admin panel includes navigation to:
+- `/admin/logs` - View system logs (not implemented)
+- `/admin/users` - Search users (not implemented)
+
+<Note>
+  These routes are referenced in the UI but not implemented in the current codebase.
+</Note>
+
+## Related Endpoints
+
+- [User Registration](/api/register) - User registration and authentication
+- [Bet Operations](/api/bet) - Betting and balance operations
+- [Win Operations](/api/win) - Winnings and balance updates
+
+## Accessibility Features
+
+The admin panel implements WCAG 2.1 Level AA standards:
+
+- **Skip Links**: Direct keyboard navigation to main content
+- **ARIA Labels**: Proper labeling for screen readers
+- **Live Regions**: Status messages with `aria-live="polite"`
+- **Form Validation**: Accessible error messages with `role="alert"`
+- **Keyboard Navigation**: Full keyboard accessibility
+- **Semantic HTML**: Proper heading hierarchy and landmarks
+
+## Browser Support
+
+- Modern browsers with ES6 support
+- Telegram WebApp SDK compatibility
+- No IE11 support required

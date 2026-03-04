@@ -1,0 +1,448 @@
+---
+title: Production Deployment
+description: Deploy Zona Jackpot 777 to production using Heroku, Render, or custom servers with Gunicorn and Eventlet
+---
+
+## Overview
+
+Zona Jackpot 777 is a Flask-SocketIO application that requires a production WSGI server with WebSocket support. This guide covers deployment to Heroku, Render, and custom servers.
+
+## Requirements
+
+<Steps>
+  <Step title="Python 3.11.9">
+    The application requires Python 3.11.9 as specified in `runtime.txt`:
+    
+    ```txt runtime.txt
+    python-3.11.9
+    ```
+  </Step>
+
+  <Step title="Production Dependencies">
+    Install all dependencies from `requirements.txt`:
+    
+    ```txt requirements.txt
+    Flask==3.1.3
+    Flask-SocketIO==5.3.6
+    gunicorn==25.1.0
+    eventlet==0.40.3
+    python-telegram-bot==22.6
+    # ... other dependencies
+    ```
+    
+    Key production packages:
+    - **gunicorn**: WSGI server for Flask
+    - **eventlet**: Async worker for WebSocket support
+    - **Flask-SocketIO**: WebSocket support for multiplayer games
+  </Step>
+
+  <Step title="HTTPS Support">
+    Telegram WebApps **require HTTPS**. Your deployment platform must provide SSL/TLS certificates.
+    
+    <Warning>
+      HTTP deployments will not work. The WebApp button will fail to open without HTTPS.
+    </Warning>
+  </Step>
+</Steps>
+
+## Heroku Deployment
+
+### Quick Deploy
+
+<Steps>
+  <Step title="Install Heroku CLI">
+    ```bash
+    curl https://cli-assets.heroku.com/install.sh | sh
+    heroku login
+    ```
+  </Step>
+
+  <Step title="Create Heroku App">
+    ```bash
+    heroku create your-app-name
+    ```
+    
+    Your app will be available at `https://your-app-name.herokuapp.com`
+  </Step>
+
+  <Step title="Configure Environment Variables">
+    ```bash
+    heroku config:set BOT_TOKEN="your-telegram-bot-token"
+    heroku config:set WEBAPP_URL="https://your-app-name.herokuapp.com"
+    heroku config:set SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+    ```
+  </Step>
+
+  <Step title="Deploy">
+    ```bash
+    git push heroku main
+    ```
+    
+    Heroku automatically detects the `Procfile` and starts the application.
+  </Step>
+</Steps>
+
+### Procfile Configuration
+
+The `Procfile` defines how Heroku runs your application:
+
+```txt Procfile
+web: gunicorn -k eventlet -w 1 app:app
+```
+
+**Breakdown:**
+- `web`: Heroku dyno type
+- `gunicorn`: Production WSGI server
+- `-k eventlet`: Use eventlet worker class for WebSocket support
+- `-w 1`: Single worker (required for SocketIO with in-memory state)
+- `app:app`: Module `app.py` with Flask app named `app`
+
+<Warning>
+  **Do not use multiple workers** (`-w > 1`) without configuring a message queue (Redis). SocketIO requires sticky sessions and shared state across workers.
+</Warning>
+
+### Database Persistence on Heroku
+
+<Warning>
+  Heroku dynos have ephemeral filesystems. The SQLite database `casino.db` will be **lost on every restart**.
+</Warning>
+
+**Solutions:**
+
+<Tabs>
+  <Tab title="PostgreSQL (Recommended)">
+    Add Heroku Postgres:
+    
+    ```bash
+    heroku addons:create heroku-postgresql:mini
+    ```
+    
+    Update `database.py` to use PostgreSQL:
+    
+    ```python
+    import os
+    from sqlalchemy import create_engine
+    
+    DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///casino.db')
+    # Heroku uses postgres://, SQLAlchemy needs postgresql://
+    if DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    ```
+  </Tab>
+  
+  <Tab title="External Database">
+    Use a managed database service:
+    
+    - [Supabase](https://supabase.com) (PostgreSQL)
+    - [PlanetScale](https://planetscale.com) (MySQL)
+    - [Railway](https://railway.app) (PostgreSQL)
+    
+    Set `DATABASE_URL` environment variable:
+    ```bash
+    heroku config:set DATABASE_URL="postgresql://user:pass@host:5432/db"
+    ```
+  </Tab>
+  
+  <Tab title="Accept Data Loss (Not Recommended)">
+    For testing only, accept that user data resets on each deployment:
+    
+    ```python app.py
+    # Database initializes on every startup
+    database.init_db()
+    ```
+    
+    <Warning>
+      All user bits and game history will be lost on dyno restarts (at least once per 24 hours).
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Render Deployment
+
+Render provides free tier with persistent disks (unlike Heroku).
+
+<Steps>
+  <Step title="Create Web Service">
+    1. Go to [Render Dashboard](https://dashboard.render.com)
+    2. Click "New" → "Web Service"
+    3. Connect your GitHub repository
+  </Step>
+
+  <Step title="Configure Build Settings">
+    ```yaml
+    Name: zona-jackpot-777
+    Environment: Python 3
+    Build Command: pip install -r requirements.txt
+    Start Command: gunicorn -k eventlet -w 1 app:app
+    ```
+  </Step>
+
+  <Step title="Add Environment Variables">
+    In the Render dashboard, add:
+    
+    | Key | Value |
+    |-----|-------|
+    | `BOT_TOKEN` | Your Telegram bot token |
+    | `WEBAPP_URL` | `https://your-app-name.onrender.com` |
+    | `SECRET_KEY` | Random 32-byte hex string |
+  </Step>
+
+  <Step title="Add Persistent Disk (Optional)">
+    To persist SQLite database:
+    
+    1. Go to "Disks" tab
+    2. Add disk mounted at `/data`
+    3. Update `database.py`:
+    
+    ```python
+    import os
+    DB_NAME = os.environ.get('DB_PATH', '/data/casino.db')
+    ```
+  </Step>
+</Steps>
+
+## Custom Server Deployment
+
+### Ubuntu/Debian Server
+
+<Steps>
+  <Step title="Install Dependencies">
+    ```bash
+    sudo apt update
+    sudo apt install python3.11 python3.11-venv nginx certbot python3-certbot-nginx
+    ```
+  </Step>
+
+  <Step title="Clone Repository">
+    ```bash
+    cd /var/www
+    git clone https://github.com/yourusername/zona-jackpot-777.git
+    cd zona-jackpot-777
+    ```
+  </Step>
+
+  <Step title="Create Virtual Environment">
+    ```bash
+    python3.11 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    ```
+  </Step>
+
+  <Step title="Configure Environment">
+    Create `.env` file:
+    
+    ```bash .env
+    BOT_TOKEN=your-telegram-bot-token
+    WEBAPP_URL=https://yourdomain.com
+    SECRET_KEY=your-secret-key
+    PORT=8000
+    ```
+    
+    Load environment variables:
+    ```bash
+    export $(cat .env | xargs)
+    ```
+  </Step>
+
+  <Step title="Run with Gunicorn">
+    ```bash
+    gunicorn -k eventlet -w 1 -b 0.0.0.0:8000 app:app
+    ```
+  </Step>
+</Steps>
+
+### Systemd Service
+
+Create `/etc/systemd/system/zona-jackpot.service`:
+
+```ini zona-jackpot.service
+[Unit]
+Description=Zona Jackpot 777 Casino
+After=network.target
+
+[Service]
+User=www-data
+WorkingDirectory=/var/www/zona-jackpot-777
+Environment="PATH=/var/www/zona-jackpot-777/venv/bin"
+EnvironmentFile=/var/www/zona-jackpot-777/.env
+ExecStart=/var/www/zona-jackpot-777/venv/bin/gunicorn -k eventlet -w 1 -b 0.0.0.0:8000 app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl enable zona-jackpot.service
+sudo systemctl start zona-jackpot.service
+sudo systemctl status zona-jackpot.service
+```
+
+### Nginx Reverse Proxy
+
+Create `/etc/nginx/sites-available/zona-jackpot`:
+
+```nginx zona-jackpot
+server {
+    listen 80;
+    server_name yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket support
+    location /socket.io {
+        proxy_pass http://127.0.0.1:8000/socket.io;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+Enable site:
+```bash
+sudo ln -s /etc/nginx/sites-available/zona-jackpot /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### SSL Certificate (Required)
+
+<Warning>
+  HTTPS is **mandatory** for Telegram WebApps. Install SSL certificate before testing.
+</Warning>
+
+```bash
+sudo certbot --nginx -d yourdomain.com
+```
+
+Certbot automatically configures Nginx for HTTPS and sets up auto-renewal.
+
+## Port Configuration
+
+The Flask app reads the port from environment variable:
+
+```python app.py
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)
+```
+
+**Platform defaults:**
+- Heroku: Uses `$PORT` (automatically set)
+- Render: Uses `10000` by default
+- Custom: Set `PORT=8000` or your preferred port
+
+<Note>
+  Always bind to `0.0.0.0` (all interfaces) in production, not `127.0.0.1`.
+</Note>
+
+## Running the Telegram Bot
+
+The Telegram bot (`main.py`) runs separately from the Flask app:
+
+```bash
+python main.py
+```
+
+**Deployment options:**
+
+<Tabs>
+  <Tab title="Same Server">
+    Run both processes using a process manager:
+    
+    ```txt Procfile
+    web: gunicorn -k eventlet -w 1 app:app
+    bot: python main.py
+    ```
+  </Tab>
+  
+  <Tab title="Separate Service">
+    Deploy bot separately (e.g., on a VPS or cloud function):
+    
+    ```bash
+    # On separate server
+    python main.py
+    ```
+    
+    Or use webhook mode instead of polling (see [Telegram Bot Guide](/deployment/telegram-bot)).
+  </Tab>
+</Tabs>
+
+## Health Checks
+
+Add a health check endpoint for monitoring:
+
+```python app.py
+@app.route('/health')
+def health():
+    return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
+```
+
+## Production Checklist
+
+- [ ] Python 3.11.9 installed
+- [ ] All dependencies from `requirements.txt` installed
+- [ ] Environment variables configured (`BOT_TOKEN`, `WEBAPP_URL`, `SECRET_KEY`)
+- [ ] HTTPS enabled (SSL certificate installed)
+- [ ] Database persistence configured (PostgreSQL or persistent disk)
+- [ ] Gunicorn with eventlet worker running
+- [ ] Nginx reverse proxy configured (if custom server)
+- [ ] Firewall allows ports 80/443
+- [ ] Systemd service enabled for auto-restart
+- [ ] Telegram bot running (`main.py`)
+- [ ] WebApp button tested in Telegram
+
+## Troubleshooting
+
+### WebSocket Connection Failed
+
+Ensure Nginx is configured for WebSocket upgrades:
+```nginx
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+```
+
+### Database Locked Errors
+
+SQLite doesn't handle high concurrency well. Consider:
+- Using PostgreSQL for production
+- Reducing worker count to 1 (`-w 1`)
+
+### Application Crashes on Startup
+
+Check logs:
+```bash
+# Heroku
+heroku logs --tail
+
+# Render
+Check dashboard logs
+
+# Custom server
+sudo journalctl -u zona-jackpot.service -f
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/deployment/configuration">
+    Configure environment variables
+  </Card>
+  <Card title="Telegram Bot Setup" icon="telegram" href="/deployment/telegram-bot">
+    Set up your Telegram bot
+  </Card>
+</CardGroup>

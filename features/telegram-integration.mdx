@@ -1,0 +1,255 @@
+---
+title: 'Telegram Integration'
+description: 'Complete integration with Telegram WebApp SDK for seamless user authentication and session management'
+---
+
+## Overview
+
+Zona Jackpot 777 leverages the Telegram WebApp SDK to provide seamless authentication and user management. Users access the platform directly through Telegram, eliminating the need for separate login credentials.
+
+## WebApp SDK Integration
+
+The application initializes the Telegram WebApp SDK on every page load to capture user data and establish secure sessions.
+
+### Initialization
+
+The SDK is loaded via CDN and initialized in the main HTML template:
+
+```html
+<!-- Telegram WebApp SDK -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+```
+
+JavaScript initialization (`static/script.js:7-9`):
+
+```javascript
+const tg = window.Telegram?.WebApp;
+tg?.ready(); // Inform Telegram that WebApp is ready
+const user = tg?.initDataUnsafe?.user;
+```
+
+<Note>
+The `ready()` method must be called to signal Telegram that the WebApp has finished loading.
+</Note>
+
+### User Data Capture
+
+When a user opens the WebApp from Telegram, their profile data is automatically extracted:
+
+```javascript
+if (user) {
+  console.log("Usuario conectado:", user.id, user.first_name, user.username);
+  
+  // Send data to Flask backend
+  fetch("/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      telegram_id: user.id,
+      nombre: user.first_name,
+      username: user.username || "",
+      photo_url: user.photo_url || ""
+    })
+  });
+}
+```
+
+**Captured Fields:**
+- `telegram_id` - Unique user identifier
+- `nombre` (first_name) - Display name
+- `username` - Telegram handle (optional)
+- `photo_url` - Profile picture URL (optional)
+
+## Backend Registration
+
+The `/register` endpoint handles user registration and session creation (`app.py:57-77`):
+
+```python
+@app.route('/register', methods=["POST"])
+def register():
+    data = request.get_json()
+
+    telegram_id = str(data.get("telegram_id"))
+    nombre = data.get("nombre")
+    username = data.get("username", "")
+    photo_url = data.get("photo_url", "")
+
+    if not telegram_id or not nombre:
+        return jsonify({"status": "error", "message": "Datos incompletos"}), 400
+
+    database.agregar_usuario(telegram_id, nombre, username, photo_url)
+
+    # Save user in session
+    session["telegram_id"] = telegram_id
+    session["nombre"] = nombre
+    session["username"] = username
+    session["photo_url"] = photo_url
+
+    return jsonify({"status": "ok"})
+```
+
+### Database Storage
+
+User data is persisted using SQLite with automatic upsert logic (`database.py:57-76`):
+
+```python
+def agregar_usuario(telegram_id: str, nombre: str, username: Optional[str] = None, 
+                    photo_url: Optional[str] = None) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute("""
+            INSERT INTO usuarios (telegram_id, nombre, username, photo_url)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(telegram_id) DO UPDATE SET 
+                nombre = excluded.nombre,
+                username = excluded.username,
+                photo_url = excluded.photo_url
+        """, (telegram_id, nombre, username, photo_url))
+        
+        return cursor.rowcount > 0
+```
+
+<Tip>
+The `ON CONFLICT` clause ensures existing users have their profile data updated automatically without errors.
+</Tip>
+
+## Session Management
+
+Flask sessions store authenticated user data across requests:
+
+### Session Variables
+
+```python
+session["telegram_id"]  # Primary identifier
+session["nombre"]       # Display name
+session["username"]     # Telegram handle
+session["photo_url"]    # Avatar URL
+```
+
+### Protected Routes
+
+Routes verify authentication by checking session data (`app.py:24-32`):
+
+```python
+@app.route('/')
+def home():
+    telegram_id = session.get("telegram_id")
+    nombre = session.get("nombre")
+    username = session.get("username", "")
+    photo_url = session.get("photo_url", "")
+
+    if telegram_id and nombre:
+        bits = database.obtener_bits(telegram_id)
+        return render_template("index.html", nombre=nombre, 
+                             username=username, telegram_id=telegram_id, 
+                             bits=bits, photo_url=photo_url)
+```
+
+### API Authentication
+
+Betting and currency operations validate session presence (`app.py:247-252`):
+
+```python
+@app.route('/bet', methods=["POST"])
+def bet():
+    if "telegram_id" not in session:
+        return jsonify({
+            "status": "error",
+            "message": "Usuario no autenticado"
+        }), 401
+```
+
+## Test Mode
+
+For local development, the application provides a test user when Telegram data is unavailable (`app.py:34-52`):
+
+```python
+else:
+    # TEST MODE: Provide a test user with bits
+    test_id = "12345"
+    test_nombre = "Usuario de Prueba"
+    
+    database.agregar_usuario(test_id, test_nombre, "tester")
+    
+    bits = database.obtener_bits(test_id)
+    if bits < 500:
+        database.recargar_bits(test_id, 500)
+        bits = database.obtener_bits(test_id)
+        
+    session["telegram_id"] = test_id
+    session["nombre"] = test_nombre
+    session["username"] = "tester"
+    session["photo_url"] = ""
+```
+
+<Warning>
+Test mode should be disabled in production by removing this fallback logic and enforcing Telegram authentication.
+</Warning>
+
+## UI Integration
+
+User information displays in the navigation bar:
+
+```html
+<span class="user-info">
+  {% if photo_url %}
+  <img src="{{ photo_url }}" alt="Avatar" class="user-avatar" />
+  {% else %}
+  👤
+  {% endif %}
+  {{ nombre }} {% if username %}(@{{ username }}){% endif %} | 
+  ID: {{ telegram_id }} | 
+  💰 Bits: <strong class="user-bits">{{ bits }}</strong>
+</span>
+```
+
+## Deep Linking
+
+The platform supports deep linking for recharge flows (`static/script.js:135-147`):
+
+```javascript
+case "recargar":
+  const tgid = window.Telegram?.WebApp?.initDataUnsafe?.user?.id || "ID_DESCONOCIDO";
+  const botUsername = "Zona_Jackpot_777bot";
+  const telegramUrl = `https://t.me/${botUsername}?start=recarga_${tgid}`;
+
+  if (window.Telegram?.WebApp) {
+    window.Telegram.WebApp.openTelegramLink(telegramUrl);
+  } else {
+    window.open(telegramUrl, "_blank");
+  }
+  break;
+```
+
+## Security Considerations
+
+<Accordion title="Session Security">
+  Flask sessions use a secret key for signing. Configure a strong secret in production:
+  
+  ```python
+  try:
+      import config
+      app.secret_key = getattr(config, 'SECRET_KEY', "clave-secreta-super-segura")
+  except ImportError:
+      app.secret_key = "clave-secreta-super-segura"
+  ```
+</Accordion>
+
+<Accordion title="Data Validation">
+  All user inputs are validated before database operations:
+  
+  ```python
+  if not telegram_id or not nombre:
+      return jsonify({"status": "error", "message": "Datos incompletos"}), 400
+  ```
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Virtual Currency" icon="coins" href="/features/virtual-currency">
+    Learn how Bits are managed for authenticated users
+  </Card>
+  <Card title="Multiplayer Rooms" icon="users" href="/features/multiplayer-rooms">
+    Explore real-time multiplayer using Telegram IDs
+  </Card>
+</CardGroup>

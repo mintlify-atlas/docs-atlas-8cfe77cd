@@ -1,0 +1,255 @@
+---
+title: Configuration
+description: Configure Zona Jackpot 777 for production deployment with environment variables and security best practices
+---
+
+## Overview
+
+Zona Jackpot 777 requires proper configuration for production deployment. This guide covers all necessary environment variables, configuration files, and security best practices.
+
+## Configuration File
+
+The main configuration is stored in `config.py` at the root of your project:
+
+```python config.py
+BOT_TOKEN = "your-telegram-bot-token-here"
+WEBAPP_URL = "https://your-app-domain.com"
+SECRET_KEY = "your-secret-key-here"  # Optional but recommended
+```
+
+<Warning>
+  Never commit `config.py` with actual credentials to version control. Add it to `.gitignore` and use environment variables for production.
+</Warning>
+
+## Environment Variables
+
+### Required Variables
+
+<Steps>
+  <Step title="BOT_TOKEN">
+    Your Telegram Bot API token from BotFather.
+    
+    ```bash
+    export BOT_TOKEN="8511146591:AAGZP46Bs0NaqzQvXeduDdwzvA3Tyd02JsU"
+    ```
+    
+    <Note>
+      Get this token by creating a bot with [@BotFather](https://t.me/BotFather). See the [Telegram Bot Setup](/deployment/telegram-bot) guide for details.
+    </Note>
+  </Step>
+
+  <Step title="WEBAPP_URL">
+    The public URL where your Flask application is deployed.
+    
+    ```bash
+    export WEBAPP_URL="https://your-app-name.herokuapp.com"
+    ```
+    
+    This URL is used in the Telegram WebApp button to launch your casino.
+  </Step>
+
+  <Step title="SECRET_KEY (Recommended)">
+    Flask session secret key for secure cookie signing.
+    
+    ```bash
+    export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+    ```
+    
+    <Warning>
+      If not set, the app falls back to a default key which is **not secure for production**. Always set a unique, random secret key.
+    </Warning>
+  </Step>
+</Steps>
+
+### Optional Variables
+
+**PORT** - Server port (default: 10000)
+```bash
+export PORT=8080
+```
+
+**ADMIN_PASSWORD** - Admin panel password (default: "admin")
+```bash
+export ADMIN_PASSWORD="your-secure-password"
+```
+
+<Note>
+  The admin password is currently hardcoded in `app.py:323`. For production, modify the code to read from an environment variable.
+</Note>
+
+## Database Configuration
+
+### SQLite Database
+
+By default, the application uses SQLite with the database file `casino.db`:
+
+```python database.py
+DB_NAME = "casino.db"
+```
+
+The database is automatically initialized on first run with the following schema:
+
+```sql
+CREATE TABLE IF NOT EXISTS usuarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id TEXT NOT NULL UNIQUE,
+    nombre TEXT NOT NULL,
+    bits INTEGER NOT NULL DEFAULT 0 CHECK (bits >= 0),
+    username TEXT,
+    total_recargas INTEGER DEFAULT 0,
+    total_ganados INTEGER DEFAULT 0,
+    photo_url TEXT
+)
+```
+
+### Database Persistence
+
+<Warning>
+  On platforms like Heroku, the filesystem is ephemeral. Your database will be lost on each dyno restart. For production, consider:
+  
+  - Using a persistent volume/disk
+  - Migrating to PostgreSQL or MySQL
+  - Using a managed database service
+</Warning>
+
+**Option 1: Persistent Volume**
+```bash
+# Ensure casino.db is stored on a persistent volume
+export DB_PATH="/persistent/data/casino.db"
+```
+
+**Option 2: PostgreSQL**
+```python
+import os
+from sqlalchemy import create_engine
+
+DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///casino.db')
+engine = create_engine(DATABASE_URL)
+```
+
+## Security Best Practices
+
+<Steps>
+  <Step title="Use Environment Variables">
+    Never hardcode credentials in source code. Use environment variables for all sensitive data:
+    
+    ```python
+    import os
+    
+    BOT_TOKEN = os.environ.get('BOT_TOKEN')
+    WEBAPP_URL = os.environ.get('WEBAPP_URL')
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'fallback-dev-key')
+    ```
+  </Step>
+
+  <Step title="Rotate Secret Keys">
+    Generate a strong random secret key:
+    
+    ```bash
+    python -c 'import secrets; print(secrets.token_hex(32))'
+    ```
+    
+    Rotate keys periodically and never reuse keys across environments.
+  </Step>
+
+  <Step title="Protect Bot Token">
+    Your bot token gives full access to your bot. If compromised:
+    
+    1. Revoke the token immediately via [@BotFather](https://t.me/BotFather)
+    2. Generate a new token
+    3. Update your deployment configuration
+  </Step>
+
+  <Step title="Secure Admin Panel">
+    The admin panel at `/admin` allows adding bits to users. Protect it with:
+    
+    - Strong password (not "admin")
+    - IP whitelisting
+    - Basic authentication
+    - Or remove it entirely in production
+  </Step>
+
+  <Step title="HTTPS Only">
+    Telegram WebApps **require HTTPS**. Ensure your `WEBAPP_URL` uses `https://`.
+    
+    <Warning>
+      HTTP URLs will not work with Telegram WebApp. Your deployment platform must support SSL/TLS.
+    </Warning>
+  </Step>
+</Steps>
+
+## Configuration Example
+
+<CodeGroup>
+```python config.py (Development)
+import os
+
+BOT_TOKEN = os.environ.get('BOT_TOKEN', 'your-dev-token')
+WEBAPP_URL = os.environ.get('WEBAPP_URL', 'http://localhost:10000')
+SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key')
+```
+
+```python config.py (Production)
+import os
+
+BOT_TOKEN = os.environ['BOT_TOKEN']  # Fail if not set
+WEBAPP_URL = os.environ['WEBAPP_URL']
+SECRET_KEY = os.environ['SECRET_KEY']
+
+# Validate HTTPS requirement
+if not WEBAPP_URL.startswith('https://'):
+    raise ValueError('WEBAPP_URL must use HTTPS for Telegram WebApp')
+```
+
+```bash .env (Local Development)
+BOT_TOKEN=8511146591:AAGZP46Bs0NaqzQvXeduDdwzvA3Tyd02JsU
+WEBAPP_URL=https://your-tunnel-url.ngrok.io
+SECRET_KEY=dev-secret-key-change-in-production
+PORT=10000
+```
+</CodeGroup>
+
+## Loading Configuration
+
+The Flask app automatically loads configuration from `config.py`:
+
+```python app.py
+try:
+    import config
+    app.secret_key = getattr(config, 'SECRET_KEY', "clave-secreta-super-segura")
+except ImportError:
+    app.secret_key = "clave-secreta-super-segura"  # Fallback for development
+```
+
+The Telegram bot loads configuration from `config.py`:
+
+```python main.py
+import config
+
+def main():
+    app = Application.builder().token(config.BOT_TOKEN).build()
+    # ...
+```
+
+## Validation Checklist
+
+Before deploying to production:
+
+- [ ] `BOT_TOKEN` is set via environment variable
+- [ ] `WEBAPP_URL` uses HTTPS
+- [ ] `SECRET_KEY` is a strong random value
+- [ ] `config.py` is added to `.gitignore`
+- [ ] Database persistence is configured
+- [ ] Admin password is changed from default
+- [ ] All credentials are stored securely
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Production Deployment" icon="rocket" href="/deployment/production">
+    Deploy to Heroku or custom servers
+  </Card>
+  <Card title="Telegram Bot Setup" icon="telegram" href="/deployment/telegram-bot">
+    Configure your Telegram bot
+  </Card>
+</CardGroup>

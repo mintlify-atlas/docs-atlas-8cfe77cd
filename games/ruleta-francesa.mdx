@@ -1,0 +1,613 @@
+---
+title: 'Ruleta Francesa'
+description: 'Classic European roulette with single zero, realistic physics, and comprehensive betting options for strategic players'
+---
+
+## Game Overview
+
+**Ruleta Francesa** (French Roulette) is the premium European roulette variant featuring:
+
+- **Single zero (0)** wheel for better odds
+- **37 numbers** (0-36)
+- **Real-time physics** simulation
+- **Multiple bet types** with payouts up to 35:1
+
+<Note>
+The single-zero wheel gives players a **2.7% house edge**, significantly better than American roulette's 5.26% double-zero variant.
+</Note>
+
+## The Roulette Wheel
+
+### Number Layout
+
+The French wheel arranges 37 numbers in a specific non-sequential pattern:
+
+```
+0 (green)
+26-3-35-12-28-7-29-18-22-9-31-14-20-1-33-16-24-5-10-23-8-30-11-36-13-27-6-34-17-25-2-21-4-19-15-32
+```
+
+**Color distribution:**
+- **Red**: 1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36
+- **Black**: 2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35
+- **Green**: 0
+
+### Wheel Physics
+
+The game uses advanced physics to simulate realistic wheel and ball behavior:
+
+```javascript
+// From physics.js - wheel rotation
+wheelSpeed *= Math.pow(CONFIG.FRICCION_RULETA, dt * 60);
+if (Math.abs(wheelSpeed) < CONFIG.VEL_MIN) wheelSpeed = 0;
+State.wheelAngle += wheelSpeed * dt;
+```
+
+**Physics constants:**
+- **Wheel friction**: `0.985` (slow deceleration)
+- **Ball friction**: `0.92` (faster deceleration)
+- **Minimum velocity**: `0.001` rad/s
+- **Launch delay**: 800ms after wheel starts
+
+## Betting System
+
+### Chip Denominations
+
+Select your chip value before placing bets:
+
+<CardGroup cols={3}>
+  <Card title="5 Bits" icon="coins">
+    Brown chip - starter bets
+  </Card>
+  <Card title="10 Bits" icon="coins">
+    Blue chip - **default selection**
+  </Card>
+  <Card title="25 Bits" icon="coins">
+    Green chip - medium stakes
+  </Card>
+  <Card title="50 Bits" icon="coins">
+    Red chip - high roller
+  </Card>
+  <Card title="100 Bits" icon="coins">
+    Purple chip - VIP bets
+  </Card>
+</CardGroup>
+
+```javascript
+// From main.js:24-35
+function initFichas() {
+  document.querySelectorAll('.ficha').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const val = parseInt(btn.dataset.valor, 10);
+      State.apuestaMonto = val;
+      montoInput.value = val;
+      btn.classList.add('selected');
+    });
+  });
+}
+```
+
+### Inside Bets (High Risk, High Reward)
+
+<Tabs>
+  <Tab title="Pleno (Straight Up)">
+    **Single number bet**
+    
+    - **Payout**: 35:1
+    - **Coverage**: 1/37 numbers
+    - **Win chance**: 2.70%
+    
+    Example: Bet 10 on #17, win = 350 + your 10 back = **360 Bits**
+    
+    ```javascript
+    // From bets.js:7
+    if (tipo === 'pleno' && numero === num) 
+      total += monto * 35 + monto;
+    ```
+    
+    <Tip>
+    Popular "hot numbers" to watch: 17 (most bet), 7 (lucky), 0 (only green)
+    </Tip>
+  </Tab>
+</Tabs>
+
+### Outside Bets (Lower Risk, Consistent)
+
+<Tabs>
+  <Tab title="Color Bets">
+    **Rojo (Red) or Negro (Black)**
+    
+    - **Payout**: 1:1 (even money)
+    - **Coverage**: 18/37 numbers
+    - **Win chance**: 48.65%
+    
+    ```javascript
+    // From bets.js:8-9
+    if (tipo === 'rojo' && color === 'red') total += monto * 1 + monto;
+    if (tipo === 'negro' && color === 'black') total += monto * 1 + monto;
+    ```
+    
+    <Note>
+    If 0 lands, all even-money bets lose. There's no "en prison" rule in this variant.
+    </Note>
+  </Tab>
+  
+  <Tab title="Even/Odd">
+    **Par (Even) or Impar (Odd)**
+    
+    - **Payout**: 1:1
+    - **Coverage**: 18/37 numbers
+    - **Win chance**: 48.65%
+    
+    ```javascript
+    // From bets.js:10-11
+    if (tipo === 'par' && num !== 0 && num % 2 === 0) total += monto * 1 + monto;
+    if (tipo === 'impar' && num !== 0 && num % 2 === 1) total += monto * 1 + monto;
+    ```
+    
+    **Note**: 0 is neither even nor odd - it loses for both bets.
+  </Tab>
+  
+  <Tab title="High/Low">
+    **Pasa (19-36) or Falta (1-18)**
+    
+    - **Payout**: 1:1
+    - **Coverage**: 18/37 numbers each
+    - **Win chance**: 48.65%
+    
+    ```javascript
+    // From bets.js:12-13
+    if (tipo === 'pasa' && num >= 19 && num <= 36) total += monto * 1 + monto;
+    if (tipo === 'falta' && num >= 1 && num <= 18) total += monto * 1 + monto;
+    ```
+  </Tab>
+</Tabs>
+
+### Bet Limits & Rules
+
+- **Minimum bet**: 1 Bit (enforced by chip selection)
+- **Maximum bet**: Your full balance
+- **Multiple bets**: Only **one active bet type** at a time
+- **Bet timing**: Place before clicking the wheel to spin
+
+```javascript
+// From main.js:40-43
+if (State.spinning) return;
+if (State.apuestas.length === 0) {
+  resultadoEl.textContent = '¡Haz una apuesta!';
+  return;
+}
+```
+
+## How to Play
+
+<Steps>
+  <Step title="Select Your Chip">
+    Click one of the 5 chip denominations (5, 10, 25, 50, 100 Bits). The selected chip gets a visual highlight.
+  </Step>
+  
+  <Step title="Place Your Bet">
+    Click on:
+    - A **number button** (0-36) for straight-up pleno bet
+    - A **colored square** (🔴 Rojo, ⚫ Negro) for color bet
+    - **Par/Impar** for even/odd
+    - **Pasa/Falta** for high/low ranges
+    
+    Only one bet type active at a time (exclusive selection).
+  </Step>
+  
+  <Step title="Spin the Wheel">
+    Click the **🎡 Girar** button or click directly on the ball dispenser.
+    
+    The game:
+    1. Deducts your bet via `/bet` API
+    2. Starts wheel rotation with random initial angle
+    3. After 800ms, launches the ball counter-clockwise
+    
+    ```javascript
+    // From main.js:76-87
+    let wheelSpeed = CONFIG.IMPULSO_RULETA;
+    State.wheelAngle = Math.random() * 2 * Math.PI;
+    let dispenserAngle = calculateDispenserAngleToCenter();
+    State.ballAngle = dispenserAngle;
+    
+    launchTimer = setTimeout(() => {
+      State.ballLanzada = true;
+      bola.style.display = 'block';
+      const sign = wheelSpeed >= 0 ? -1 : 1;
+      State.ballAngularSpeed = sign * Math.abs(wheelSpeed) * CONFIG.IMPULSO_BOLA_FACTOR;
+    }, CONFIG.LAUNCH_DELAY);
+    ```
+  </Step>
+  
+  <Step title="Watch the Physics">
+    - Wheel spins clockwise
+    - Ball launches counter-clockwise from dispenser
+    - Both decelerate with friction
+    - Ball spirals inward toward pockets
+    - Settles when both velocities near zero
+  </Step>
+  
+  <Step title="Collect Winnings">
+    If your bet matches the result:
+    - **Confetti animation** (60 particles)
+    - **Sparkling result text**
+    - Balance updates via `/win` API
+    - **Smooth count-up** animation to new balance
+    
+    ```javascript
+    // From main.js:109-127
+    if (ganancia > 0) {
+      fetch('/win', {
+        method: 'POST',
+        body: JSON.stringify({ cantidad: Math.floor(ganancia) })
+      })
+        .then(r => r.json())
+        .then(data => {
+          State.saldo = data.bits;
+          saldoEl.textContent = State.saldo;
+          animateSaldo(saldoEl);
+        });
+      
+      sparkResultado(resultadoEl);
+      showConfetti(60);
+    }
+    ```
+  </Step>
+</Steps>
+
+## Payout Table
+
+| Bet Type | Numbers Covered | Payout | Win Probability | Example (10 Bits) |
+|----------|-----------------|--------|-----------------|-------------------|
+| **Pleno** (Straight) | 1 | 35:1 | 2.70% | Win 350 + 10 = 360 |
+| **Rojo/Negro** (Red/Black) | 18 | 1:1 | 48.65% | Win 10 + 10 = 20 |
+| **Par/Impar** (Even/Odd) | 18 | 1:1 | 48.65% | Win 10 + 10 = 20 |
+| **Pasa/Falta** (High/Low) | 18 | 1:1 | 48.65% | Win 10 + 10 = 20 |
+
+<Warning>
+When **0 lands**, all outside bets lose (color, even/odd, high/low). Only a straight bet on 0 wins.
+</Warning>
+
+## Advanced Controls
+
+### Repeat Bet
+
+Click **↺ Repetir** to place the same bet as your last spin:
+
+```javascript
+// From main.js:196-198
+document.querySelector('#repeatBet').addEventListener('click', () => {
+  State.apuestas = [...State.apuestas];
+});
+```
+
+### Double Bet
+
+Click **×2 Doblar** to double your current bet amount:
+
+```javascript
+// From main.js:199-201
+document.querySelector('#doubleBet').addEventListener('click', () => {
+  State.apuestas.forEach(a => a.monto *= 2);
+});
+```
+
+<Tip>
+**Martingale strategy**: Double your bet after each loss. When you eventually win, you recover all losses plus profit. **Risk**: Requires large bankroll to survive losing streaks.
+</Tip>
+
+## User Interface
+
+### Header Section
+
+```html
+<!-- From ruleta.html:37-46 -->
+<header class="rlt-header">
+  <a href="/" class="rlt-back">← Lobby</a>
+  <div class="rlt-title">🎡 Ruleta Francesa</div>
+  <div class="rlt-saldo-wrap">
+    <img src="{{ photo_url }}" class="user-avatar" />
+    <span class="rlt-saldo-label">BITS</span>
+    <span id="saldo" class="rlt-saldo-val">{{ bits }}</span>
+  </div>
+</header>
+```
+
+### Wheel Section
+
+- **Canvas**: Renders spinning wheel with sectors
+- **Ball**: Animated DOM element overlaid on canvas
+- **Resultado**: Shows winning number and color
+- **Historial**: Recent results (last 10 spins)
+
+```javascript
+// From ui.js - history tracking
+export function updateHistory(num) {
+  if (num !== undefined) State.history.unshift(num);
+  if (State.history.length > 10) State.history.pop();
+  
+  const list = document.getElementById('historyList');
+  list.innerHTML = State.history.map(n => {
+    const sector = State.numeros.find(s => s.num === n);
+    const colorClass = sector.color === 'red' ? 'hist-red' : 
+                       sector.color === 'black' ? 'hist-black' : 'hist-green';
+    return `<span class="hist-num ${colorClass}">${n}</span>`;
+  }).join('');
+}
+```
+
+### Betting Panel
+
+<CardGroup cols={2}>
+  <Card title="Ficha Row" icon="coins">
+    5 chip buttons with color-coded values
+  </Card>
+  <Card title="Apuestas Grid" icon="grid">
+    6 classic outside bet buttons
+  </Card>
+  <Card title="Números Grid" icon="hashtag">
+    37 buttons (0-36) for straight bets
+  </Card>
+  <Card title="Control Row" icon="sliders">
+    Repeat, Spin, Double controls
+  </Card>
+</CardGroup>
+
+## Physics Deep Dive
+
+### Ball Movement System
+
+The ball follows a complex multi-phase trajectory:
+
+<Steps>
+  <Step title="Launch Phase">
+    Ball starts at dispenser angle with high angular velocity:
+    
+    ```javascript
+    // From main.js:167-168
+    State.ballAngularSpeed = sign * Math.abs(wheelSpeed) * 
+      CONFIG.IMPULSO_BOLA_FACTOR + 
+      randRange(-CONFIG.IMPULSO_BOLA_RANDOM, CONFIG.IMPULSO_BOLA_RANDOM);
+    ```
+    
+    - Opposite direction to wheel spin
+    - ~1.8-2.2x wheel speed
+    - Random variance for unpredictability
+  </Step>
+  
+  <Step title="Spiral Inward">
+    Radial position decreases gradually:
+    
+    ```javascript
+    // Ball radius decreases as it loses energy
+    State.ballRadius -= CONFIG.BALL_RADIAL_DECAY * dt;
+    State.ballRadius = clamp(State.ballRadius, rMin, rMax);
+    ```
+    
+    Creates the iconic roulette spiral effect.
+  </Step>
+  
+  <Step title="Collision Detection">
+    When ball radius reaches pocket zone:
+    
+    ```javascript
+    const pocketRadius = rMin + (rMax - rMin) * 0.18;
+    if (State.ballRadius <= pocketRadius + 0.5 && 
+        Math.abs(State.ballAngularSpeed) < CONFIG.VEL_MIN) {
+      // Ball has settled!
+      const sectorIdx = sectorBajoBola(slice);
+      const ganador = State.numeros[sectorIdx];
+    }
+    ```
+  </Step>
+  
+  <Step title="Final Settlement">
+    Both wheel and ball must stop:
+    
+    ```javascript
+    if (Math.abs(wheelSpeed) < CONFIG.VEL_MIN &&
+        Math.abs(State.ballAngularSpeed) < CONFIG.VEL_MIN &&
+        State.ballRadius <= pocketRadius + 0.5) {
+      finalizar();  // Determine winner
+    }
+    ```
+  </Step>
+</Steps>
+
+### Sector Detection
+
+```javascript
+// From physics.js
+export function sectorBajoBola(sliceAngle) {
+  // Normalize ball angle to [0, 2π]
+  let normalizedAngle = (State.ballAngle - State.wheelAngle) % (2 * Math.PI);
+  if (normalizedAngle < 0) normalizedAngle += 2 * Math.PI;
+  
+  // Find which sector the angle falls into
+  const sectorIndex = Math.floor(normalizedAngle / sliceAngle) % State.numeros.length;
+  return sectorIndex;
+}
+```
+
+## Tips & Strategies
+
+<AccordionGroup>
+  <Accordion title="The House Always Wins (Eventually)">
+    With a 2.7% house edge, the casino has a mathematical advantage. Over many spins:
+    
+    ```
+    Expected return = 97.3% of total bets
+    Expected loss = 2.7% of total bets
+    ```
+    
+    Short-term variance can create wins, but long sessions favor the house.
+  </Accordion>
+  
+  <Accordion title="Even-Money Bets for Consistency">
+    Red/Black, Even/Odd, High/Low all offer:
+    - **48.65% win rate**
+    - Smallest variance
+    - Best for bankroll preservation
+    
+    Downside: Lowest excitement and payout potential.
+  </Accordion>
+  
+  <Accordion title="Straight Bets for Jackpots">
+    Pleno bets on single numbers:
+    - **35:1 payout** is the highest
+    - Only 2.7% hit rate (1 in 37)
+    - Requires patience and large bankroll
+    
+    Consider betting **multiple numbers** (e.g., 5 different plenos) to increase hit rate while maintaining high payouts.
+  </Accordion>
+  
+  <Accordion title="Avoid Betting Systems">
+    Common systems like Martingale, Fibonacci, D'Alembert:
+    - **Don't change house edge** (still 2.7%)
+    - Require infinite bankroll to guarantee profit
+    - Can lead to catastrophic losses during streaks
+    
+    Play for fun, not as a reliable income source.
+  </Accordion>
+  
+  <Accordion title="Track Hot/Cold Numbers">
+    The "Historial" shows recent results. Some players bet on:
+    - **Hot numbers**: Recently appeared ("they're on a roll")
+    - **Cold numbers**: Overdue ("law of averages")
+    
+    **Reality**: Each spin is independent. Past results don't affect future outcomes (gambler's fallacy).
+  </Accordion>
+  
+  <Accordion title="Set Win/Loss Limits">
+    Before playing, decide:
+    - **Win goal**: Cash out after gaining X Bits
+    - **Loss limit**: Stop after losing Y Bits
+    
+    Stick to these limits to avoid chasing losses or giving back winnings.
+  </Accordion>
+</AccordionGroup>
+
+## Game Configuration
+
+From `physics.js`:
+
+```javascript
+export const CONFIG = Object.freeze({
+  IMPULSO_RULETA: 8.5,           // Initial wheel spin speed
+  FRICCION_RULETA: 0.985,        // Wheel deceleration (98.5% per frame)
+  IMPULSO_BOLA_FACTOR: 1.8,      // Ball speed relative to wheel
+  IMPULSO_BOLA_RANDOM: 0.4,      // Random variance in ball launch
+  FRICCION_BOLA: 0.92,           // Ball deceleration (faster than wheel)
+  BALL_RADIAL_DECAY: 0.08,       // How fast ball spirals inward
+  BALL_R_MAX_RATIO: 0.85,        // Starting radius (85% of wheel)
+  BALL_R_MIN_RATIO: 0.35,        // Pocket radius (35% of wheel)
+  VEL_MIN: 0.001,                // Threshold for "stopped"
+  LAUNCH_DELAY: 800              // ms before ball launches
+});
+```
+
+### Number Sequence
+
+The wheel uses the authentic European single-zero layout:
+
+```javascript
+export const NUMEROS_RULETA = [
+  { num: 0, color: 'green' },
+  { num: 26, color: 'black' },
+  { num: 3, color: 'red' },
+  { num: 35, color: 'black' },
+  // ... full 37-number sequence
+];
+```
+
+## Responsive Design
+
+The game adapts to all screen sizes:
+
+```javascript
+// From main.js:206-209
+window.addEventListener('resize', () => {
+  initCanvas(canvas);
+  if (State.ballLanzada) actualizarPosicionBola(bola, canvas);
+});
+```
+
+- **Desktop**: Large wheel, full betting panel
+- **Tablet**: Medium wheel, stacked controls
+- **Mobile**: Compact wheel, scrollable bets
+
+## Accessibility
+
+```html
+<!-- Semantic HTML from ruleta.html -->
+<button class="apuesta-btn" 
+        data-tipo="rojo" 
+        aria-pressed="false" 
+        role="switch">
+  🔴 Rojo <small>×2</small>
+</button>
+```
+
+- **ARIA labels**: Screen reader friendly bet types
+- **Keyboard navigation**: Tab through all interactive elements
+- **Color contrast**: WCAG AA compliant (gold text on dark backgrounds)
+
+## Server Integration
+
+### Bet Placement
+
+```javascript
+// From main.js:48-70
+const apuestaTotal = State.apuestas.reduce((sum, ap) => sum + ap.monto, 0);
+
+const res = await fetch('/bet', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ cantidad: apuestaTotal })
+});
+
+const data = await res.json();
+if (res.ok && data.status === 'ok') {
+  State.saldo = data.bits;
+  saldoEl.textContent = State.saldo;
+} else {
+  window.Telegram.WebApp.showAlert(data.message || "Error procesando la apuesta.");
+  State.spinning = false;
+  return;
+}
+```
+
+### Winnings Claim
+
+```javascript
+// From main.js:111-124
+fetch('/win', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ cantidad: Math.floor(ganancia) })
+})
+  .then(res => res.json())
+  .then(data => {
+    if (data.status === 'ok') {
+      State.saldo = data.bits;
+      saldoEl.textContent = State.saldo;
+      animateSaldo(saldoEl);
+    }
+  });
+```
+
+<Warning>
+All balance changes are server-authoritative. The client cannot modify Bits directly - only the Flask backend can update balances via Telegram WebApp database.
+</Warning>
+
+## Related Games
+
+<CardGroup cols={2}>
+  <Card title="Slot Machine" icon="slot-machine" href="/games/slot-machine">
+    5-reel premium slots with progressive jackpots
+  </Card>
+  <Card title="Moche" icon="cards" href="/games/moche">
+    Strategic Nicaraguan card game with multiplayer
+  </Card>
+</CardGroup>

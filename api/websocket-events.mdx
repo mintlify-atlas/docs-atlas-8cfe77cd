@@ -1,0 +1,824 @@
+---
+title: "WebSocket Events"
+description: "Real-time Socket.IO events for multiplayer room management and game synchronization"
+---
+
+## Overview
+
+The Zona Jackpot 777 platform uses Socket.IO for real-time communication in multiplayer games. This page documents all WebSocket events for room management, game state synchronization, and player interactions.
+
+<Info>
+  All WebSocket events require an active session with Telegram authentication. Events use the `socketio` namespace on the same domain as the main application.
+</Info>
+
+---
+
+## Connection Setup
+
+### Client-Side Connection
+
+```javascript
+import io from 'socket.io-client';
+
+const socket = io(window.location.origin, {
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000
+});
+
+// Connection status
+socket.on('connect', () => {
+  console.log('Connected to server');
+});
+
+socket.on('disconnect', () => {
+  console.log('Disconnected from server');
+});
+```
+
+<Warning>
+  When a player disconnects, they are automatically removed from their current room. The server broadcasts a `room_update` event to notify other players.
+</Warning>
+
+---
+
+## Room Management Events
+
+### join_moche_room
+
+Join an existing multiplayer room.
+
+**Emit from client:**
+
+```javascript
+socket.emit('join_moche_room', {
+  room_id: 'a3b5c7d9'
+});
+```
+
+**Parameters:**
+
+<ParamField body="room_id" type="string" required>
+  The unique room identifier (obtained from POST /api/rooms or room listing)
+</ParamField>
+
+**Server Response:**
+
+On success, the server:
+1. Adds the player to the room
+2. Joins the Socket.IO room (for targeted broadcasts)
+3. Emits `room_update` to all players in the room
+
+On failure, emits `room_error` to the requesting player only.
+
+**Example:**
+
+```javascript
+socket.emit('join_moche_room', { room_id: 'a3b5c7d9' });
+
+// Listen for success
+socket.on('room_update', (room) => {
+  console.log('Joined room:', room);
+  displayRoom(room);
+});
+
+// Listen for errors
+socket.on('room_error', (data) => {
+  console.error('Failed to join:', data.message);
+  alert(data.message);
+});
+```
+
+**Error Messages:**
+- "Sala no encontrada" - Room does not exist
+- "La partida ya ha comenzado" - Game already started
+- "La sala está llena" - Room is full
+
+---
+
+### toggle_ready
+
+Toggle the player's ready status in the current room.
+
+**Emit from client:**
+
+```javascript
+socket.emit('toggle_ready', {});
+```
+
+**Parameters:**
+
+No parameters required. The server retrieves `current_room` and `telegram_id` from the session.
+
+**Server Response:**
+
+Emits `room_update` to all players in the room with updated ready statuses.
+
+**Example:**
+
+```javascript
+// Toggle ready button
+readyButton.addEventListener('click', () => {
+  socket.emit('toggle_ready', {});
+});
+
+// Update UI when room changes
+socket.on('room_update', (room) => {
+  // Find current player's ready status
+  const myPlayer = room.players.find(p => p.id === myTelegramId);
+  readyButton.textContent = myPlayer.ready ? 'Not Ready' : 'Ready';
+  readyButton.classList.toggle('ready', myPlayer.ready);
+  
+  // Update other players' status
+  updatePlayerList(room.players);
+});
+```
+
+---
+
+### start_moche_game
+
+Start the game (only available to the room host).
+
+**Emit from client:**
+
+```javascript
+socket.emit('start_moche_game');
+```
+
+**Parameters:**
+
+No parameters required. The server validates that the emitting player is the host.
+
+**Server Response:**
+
+On success:
+1. Room status changes to "playing"
+2. Bots are added based on difficulty and available slots
+3. Deck is created and shuffled
+4. Cards are dealt to all players (9 cards each)
+5. Emits `game_started` to all players in the room
+
+On failure, emits `room_error` to the host.
+
+**Example:**
+
+```javascript
+// Only show start button to host
+if (room.host === myTelegramId) {
+  startButton.style.display = 'block';
+  startButton.addEventListener('click', () => {
+    socket.emit('start_moche_game');
+  });
+}
+
+// Handle game start
+socket.on('game_started', (data) => {
+  console.log('Game starting in room:', data.room_id);
+  // Request personal game state
+  socket.emit('request_game_state');
+});
+
+// Handle start errors
+socket.on('room_error', (data) => {
+  console.error('Cannot start game:', data.message);
+  alert(data.message);
+});
+```
+
+**Error Messages:**
+- "No puedes iniciar la partida" - Not the host or game already started
+
+---
+
+### leave_moche_room
+
+Leave the current room.
+
+**Emit from client:**
+
+```javascript
+socket.emit('leave_moche_room', {});
+```
+
+**Parameters:**
+
+No parameters required. The server retrieves `current_room` and `telegram_id` from the session.
+
+**Server Response:**
+
+1. Removes the player from the room
+2. If the room is empty, deletes the room
+3. If the host left, reassigns host to another player
+4. Emits `room_update` to remaining players
+
+**Example:**
+
+```javascript
+leaveButton.addEventListener('click', () => {
+  socket.emit('leave_moche_room', {});
+  // Navigate back to lobby
+  window.location.href = '/lobby';
+});
+```
+
+<Note>
+  If you disconnect without explicitly leaving, the `disconnect` event handler automatically calls `leave_moche_room` for you.
+</Note>
+
+---
+
+## Game State Events
+
+### request_game_state
+
+Request the current player's game state after the game has started.
+
+**Emit from client:**
+
+```javascript
+socket.emit('request_game_state');
+```
+
+**Parameters:**
+
+No parameters required.
+
+**Server Response:**
+
+Emits `game_state_sync` with the player's personalized game state.
+
+**Example:**
+
+```javascript
+socket.on('game_started', () => {
+  // Immediately request state after game starts
+  socket.emit('request_game_state');
+});
+
+socket.on('game_state_sync', (state) => {
+  console.log('Received game state:', state);
+  initializeGame(state);
+});
+```
+
+**State Structure:**
+
+The server returns a personalized state object where opponent cards are hidden:
+
+```json
+{
+  "room_id": "a3b5c7d9",
+  "bet_amount": 150,
+  "difficulty": "medium",
+  "bots_count": 2,
+  "state": {
+    "deck": [],
+    "discardPile": [
+      {"suit": "♠", "rank": "5", "value": 5, "isRed": false}
+    ],
+    "players": {
+      "123456789": {
+        "id": "123456789",
+        "name": "PlayerOne",
+        "cards": [
+          {"suit": "♥", "rank": "K", "value": 13, "isRed": true},
+          {"suit": "♦", "rank": "7", "value": 7, "isRed": true}
+        ],
+        "bajadas": [],
+        "is_bot": false
+      },
+      "bot1": {
+        "id": "bot1",
+        "name": "Karla",
+        "cards": [{"hidden": true}, {"hidden": true}],
+        "bajadas": [],
+        "is_bot": true
+      }
+    },
+    "turnOrder": ["123456789", "bot1", "bot2"],
+    "currentTurnIndex": 0,
+    "phase": "INTERCAMBIO",
+    "hasDrawn": false,
+    "drawnCardRef": null,
+    "mustUseDiscard": false,
+    "latestDiscardEnlarged": false
+  }
+}
+```
+
+<Warning>
+  Opponent cards are replaced with `{"hidden": true}` placeholders to prevent cheating. Only your own cards are revealed.
+</Warning>
+
+---
+
+### sync_state
+
+Broadcast your game state changes to other players in the room.
+
+**Emit from client:**
+
+```javascript
+socket.emit('sync_state', {
+  room_id: 'a3b5c7d9',
+  STATE: gameState
+});
+```
+
+**Parameters:**
+
+<ParamField body="room_id" type="string" required>
+  The current room identifier
+</ParamField>
+
+<ParamField body="STATE" type="object" required>
+  The complete game state object to synchronize
+</ParamField>
+
+**Server Response:**
+
+Broadcasts `game_state_sync` to all players in the room **except the sender** (using `include_self=False`).
+
+**Example:**
+
+```javascript
+// After making a game move
+function afterMove() {
+  // Update local state
+  gameState.phase = 'JUEGO';
+  gameState.currentTurnIndex++;
+  
+  // Sync with other players
+  socket.emit('sync_state', {
+    room_id: currentRoomId,
+    STATE: gameState
+  });
+}
+
+// Receive state updates from other players
+socket.on('game_state_sync', (data) => {
+  console.log('Received state update:', data);
+  
+  // Update game state
+  if (data.STATE) {
+    gameState = data.STATE;
+  }
+  
+  // Update UI based on phase
+  if (data.phase) {
+    updatePhaseDisplay(data.phase);
+  }
+  
+  // Update turn indicator
+  updateTurnIndicator(gameState.currentTurnIndex);
+});
+```
+
+<Info>
+  The `sync_state` event is used for peer-to-peer game state synchronization. The server validates that the sender is in the specified room before broadcasting.
+</Info>
+
+---
+
+### game_state_sync
+
+Received when another player updates their game state or when you request your state.
+
+**Listen on client:**
+
+```javascript
+socket.on('game_state_sync', (data) => {
+  // Handle state update
+});
+```
+
+**Data Structure:**
+
+Can contain either:
+1. Full state object (from `request_game_state`)
+2. Partial state update (from `sync_state`)
+
+```javascript
+// Full state (from request_game_state)
+{
+  "room_id": "a3b5c7d9",
+  "bet_amount": 150,
+  "difficulty": "medium",
+  "bots_count": 2,
+  "state": { /* Full game state */ }
+}
+
+// Partial update (from sync_state)
+{
+  "STATE": { /* Game state object */ },
+  "phase": "JUEGO",
+  "hasDrawn": true
+}
+```
+
+---
+
+## Communication Events
+
+### quick_message
+
+Send a quick chat message to all players in the room.
+
+**Emit from client:**
+
+```javascript
+socket.emit('quick_message', {
+  room_id: 'a3b5c7d9',
+  sender: 'PlayerOne',
+  msg: 'Good luck!'
+});
+```
+
+**Parameters:**
+
+<ParamField body="room_id" type="string">
+  Optional. Room identifier. Falls back to session's `current_room` if not provided.
+</ParamField>
+
+<ParamField body="sender" type="string">
+  Optional. Sender name. Falls back to session's `nombre` if not provided.
+</ParamField>
+
+<ParamField body="msg" type="string" required>
+  The message content to send
+</ParamField>
+
+**Server Response:**
+
+Broadcasts `quick_message` to all players in the room **except the sender**.
+
+**Example:**
+
+```javascript
+// Send quick messages
+const quickMessages = ['Good luck!', 'Nice move!', 'Well played!'];
+
+quickMessages.forEach((msg, index) => {
+  const button = document.getElementById(`quick-msg-${index}`);
+  button.textContent = msg;
+  button.addEventListener('click', () => {
+    socket.emit('quick_message', {
+      msg: msg
+    });
+  });
+});
+
+// Receive messages from others
+socket.on('quick_message', (data) => {
+  console.log(`${data.sender}: ${data.msg}`);
+  
+  // Display message in chat UI
+  const messageElement = document.createElement('div');
+  messageElement.className = 'chat-message';
+  messageElement.innerHTML = `
+    <strong>${data.sender}</strong>: ${data.msg}
+  `;
+  chatContainer.appendChild(messageElement);
+  
+  // Auto-remove after 3 seconds
+  setTimeout(() => {
+    messageElement.remove();
+  }, 3000);
+});
+```
+
+---
+
+## Server-to-Client Events
+
+### room_update
+
+Broadcast when the room state changes (player joins, leaves, toggles ready, etc.).
+
+**Listen on client:**
+
+```javascript
+socket.on('room_update', (room) => {
+  console.log('Room updated:', room);
+  updateRoomDisplay(room);
+});
+```
+
+**Data Structure:**
+
+The complete room object:
+
+```json
+{
+  "id": "a3b5c7d9",
+  "host": "123456789",
+  "host_name": "PlayerOne",
+  "is_private": false,
+  "bet_amount": 150,
+  "total_slots": 4,
+  "difficulty": "medium",
+  "bots_count": 0,
+  "status": "waiting",
+  "players": [
+    {
+      "id": "123456789",
+      "name": "PlayerOne",
+      "is_host": true,
+      "ready": false,
+      "connected": true
+    }
+  ],
+  "state": null
+}
+```
+
+**Triggered by:**
+- Player joins room
+- Player leaves room
+- Player toggles ready status
+- Player disconnects
+- Host changes (when original host leaves)
+
+---
+
+### room_error
+
+Sent when a room operation fails.
+
+**Listen on client:**
+
+```javascript
+socket.on('room_error', (data) => {
+  console.error('Room error:', data.message);
+  alert(data.message);
+});
+```
+
+**Data Structure:**
+
+```json
+{
+  "message": "Error description in Spanish"
+}
+```
+
+**Common Error Messages:**
+- "Sala no encontrada" - Room not found
+- "La partida ya ha comenzado" - Game already started
+- "La sala está llena" - Room is full
+- "No puedes iniciar la partida" - Cannot start game (not host or already started)
+
+---
+
+### game_started
+
+Broadcast when the host starts the game.
+
+**Listen on client:**
+
+```javascript
+socket.on('game_started', (data) => {
+  console.log('Game started in room:', data.room_id);
+  // Request your personal game state
+  socket.emit('request_game_state');
+});
+```
+
+**Data Structure:**
+
+```json
+{
+  "room_id": "a3b5c7d9"
+}
+```
+
+<Note>
+  After receiving `game_started`, immediately emit `request_game_state` to get your personalized game state with your cards.
+</Note>
+
+---
+
+### disconnect
+
+Automatic event when a player disconnects.
+
+**Listen on client:**
+
+```javascript
+socket.on('disconnect', (reason) => {
+  console.log('Disconnected:', reason);
+  
+  if (reason === 'io server disconnect') {
+    // Server forcibly disconnected
+    socket.connect();
+  }
+  
+  // Show reconnection UI
+  showReconnectingMessage();
+});
+```
+
+**Server Behavior:**
+
+When a player disconnects:
+1. Server automatically removes them from their current room
+2. If the room becomes empty, it's deleted
+3. If the disconnected player was the host, host is reassigned
+4. `room_update` is broadcast to remaining players
+
+---
+
+## Game Phases
+
+The `phase` field in the game state indicates the current game phase:
+
+| Phase | Description |
+|-------|-------------|
+| `REPARTO` | Initial card dealing (9 cards per player) |
+| `INTERCAMBIO` | Card exchange phase (pass 3 cards to opponent) |
+| `JUEGO` | Main gameplay phase |
+| `RESUELTO` | Game resolved, winner determined |
+
+<Info>
+  Phase transitions are managed by the game logic in the client. The server only validates and synchronizes state changes.
+</Info>
+
+---
+
+## Complete Example: Room Flow
+
+Here's a complete example showing the typical room lifecycle:
+
+```javascript
+import io from 'socket.io-client';
+
+const socket = io(window.location.origin);
+let currentRoom = null;
+let myTelegramId = null;
+
+// Initialize
+socket.on('connect', () => {
+  console.log('Connected to server');
+});
+
+// Create room
+fetch('/api/rooms', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    difficulty: 'medium',
+    is_private: false,
+    total_slots: 4
+  })
+})
+.then(res => res.json())
+.then(data => {
+  // Join the room via WebSocket
+  socket.emit('join_moche_room', { room_id: data.room_id });
+});
+
+// Handle room updates
+socket.on('room_update', (room) => {
+  currentRoom = room;
+  console.log('Room updated:', room);
+  
+  // Update player list
+  const playerList = document.getElementById('players');
+  playerList.innerHTML = room.players.map(p => `
+    <div class="player ${p.ready ? 'ready' : ''}">
+      <span>${p.name}</span>
+      ${p.is_host ? '👑' : ''}
+      ${p.ready ? '✓' : '○'}
+    </div>
+  `).join('');
+  
+  // Show start button for host
+  if (room.host === myTelegramId) {
+    document.getElementById('start-game').style.display = 'block';
+  }
+});
+
+// Ready toggle
+document.getElementById('ready-btn').addEventListener('click', () => {
+  socket.emit('toggle_ready', {});
+});
+
+// Start game (host only)
+document.getElementById('start-game').addEventListener('click', () => {
+  socket.emit('start_moche_game');
+});
+
+// Game started
+socket.on('game_started', (data) => {
+  console.log('Game started!');
+  // Hide lobby, show game UI
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('game').style.display = 'block';
+  
+  // Request initial state
+  socket.emit('request_game_state');
+});
+
+// Receive game state
+socket.on('game_state_sync', (data) => {
+  if (data.state) {
+    // Initial state
+    initializeGame(data);
+  } else {
+    // State update from another player
+    updateGameState(data.STATE || data);
+  }
+});
+
+// Send state updates
+function makeMove(move) {
+  // Update local game state
+  applyMove(move);
+  
+  // Sync with others
+  socket.emit('sync_state', {
+    room_id: currentRoom.id,
+    STATE: gameState
+  });
+}
+
+// Quick messages
+document.querySelectorAll('.quick-msg-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    socket.emit('quick_message', {
+      msg: btn.textContent
+    });
+  });
+});
+
+socket.on('quick_message', (data) => {
+  showChatMessage(data.sender, data.msg);
+});
+
+// Handle errors
+socket.on('room_error', (data) => {
+  alert(data.message);
+});
+
+// Leave room
+document.getElementById('leave-btn').addEventListener('click', () => {
+  socket.emit('leave_moche_room', {});
+  window.location.href = '/lobby';
+});
+
+// Auto-cleanup on disconnect
+socket.on('disconnect', () => {
+  console.log('Disconnected - will auto-leave room');
+});
+```
+
+---
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always Handle Errors">
+    Listen for `room_error` events and provide clear feedback to users. Error messages are in Spanish by default.
+  </Accordion>
+  
+  <Accordion title="Request State After Game Starts">
+    When you receive `game_started`, immediately emit `request_game_state` to get your personalized state with your cards visible.
+  </Accordion>
+  
+  <Accordion title="Validate Before Emitting">
+    Check that you're in a room and have the required permissions before emitting events like `start_moche_game` (host only).
+  </Accordion>
+  
+  <Accordion title="Implement Reconnection Logic">
+    Socket.IO handles automatic reconnection, but you should handle the UI state when reconnecting. The server will remember your room.
+  </Accordion>
+  
+  <Accordion title="Hide Opponent Cards">
+    The server hides opponent cards in `game_state_sync` responses. Never trust client-side state for opponent cards - always use server state.
+  </Accordion>
+  
+  <Accordion title="Sync State Efficiently">
+    Only emit `sync_state` when game state actually changes. Avoid syncing on every render or animation frame.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Rooms API" icon="door-open" href="/api/rooms">
+    Create and list multiplayer game rooms
+  </Card>
+  <Card title="Moche Game" icon="cards" href="/games/moche">
+    Learn about the Moche card game rules
+  </Card>
+  <Card title="Virtual Currency" icon="coins" href="/features/virtual-currency">
+    Understand the Bits system and betting
+  </Card>
+  <Card title="Telegram Integration" icon="telegram" href="/features/telegram-integration">
+    Session management and authentication
+  </Card>
+</CardGroup>
