@@ -1,0 +1,104 @@
+{
+  "projectType": "saas",
+  "projectName": "Zona Jackpot 777",
+  "projectDescription": "A Telegram WebApp casino platform featuring multiplayer games, virtual currency system, and real-time gameplay.",
+  "theme": "almond",
+  "primaryColor": "#FFD700",
+  "lightColor": "#FFA500",
+  "darkColor": "#8B4513",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/telegram-integration",
+              "features/virtual-currency",
+              "features/multiplayer-rooms",
+              "features/admin-panel"
+            ]
+          },
+          {
+            "group": "Games",
+            "pages": [
+              "games/slot-machine",
+              "games/moche",
+              "games/ruleta-francesa"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/configuration",
+              "deployment/production",
+              "deployment/telegram-bot"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/register"
+            ]
+          },
+          {
+            "group": "Game Operations",
+            "pages": [
+              "api/bet",
+              "api/win"
+            ]
+          },
+          {
+            "group": "Multiplayer",
+            "pages": [
+              "api/rooms",
+              "api/websocket-events"
+            ]
+          },
+          {
+            "group": "Administration",
+            "pages": [
+              "api/admin"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Telegram WebApp integration with seamless user authentication",
+    "Real-time multiplayer game rooms using WebSocket (Flask-SocketIO)",
+    "Virtual currency (Bits) system with betting and winnings tracking",
+    "Three casino games: Slot Machine, Moche card game, and French Roulette",
+    "Admin dashboard for user and currency management",
+    "Leaderboard system for top players and winners"
+  ],
+  "publicApiSurface": [
+    "/register - Register Telegram user",
+    "/bet - Place bet and deduct bits",
+    "/win - Award winning bits to user",
+    "/api/rooms - Create and list multiplayer rooms",
+    "/slotmachine - Slot machine game interface",
+    "/moche - Moche card game with multiplayer support",
+    "/ruleta - French roulette game interface",
+    "/admin - Admin panel for user management",
+    "join_moche_room - WebSocket event to join a multiplayer room",
+    "toggle_ready - WebSocket event to toggle player ready state",
+    "start_moche_game - WebSocket event to start the game",
+    "sync_state - WebSocket event to synchronize game state"
+  ]
+}
